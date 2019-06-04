@@ -40,11 +40,15 @@ import io.vertx.ext.web.handler.BodyHandler;
  * 任务包含 触发事件或者事件组合 触发动作 动作成功处理 动作失败处理
  * 
  * task_runat {
- *   eventId: 'eventId'
+ *   eventId: 'eventId',
+ *   filters: [
+ *   	{name: 'event_output_name', value: 'accept_value'}
+ *   ]
  * }
  * 
  * task_runwith {
  *   url: 'url',
+ *   payload: {...},
  *   success: {
  *     url: 'url'
  *   },
@@ -94,9 +98,6 @@ public class MainVerticle extends AbstractVerticle {
 		});
 		connectStompServer();
 
-		// 初始化事件订阅
-		mySQLClient.query("select * from aag_events;", ar -> this.subscribeevents(ar));
-		
 		Router router = Router.router(vertx);
 		
 		router.route("/aag/register/*").handler(BodyHandler.create());
@@ -122,6 +123,10 @@ public class MainVerticle extends AbstractVerticle {
 						connectStompServer();
 					} else {
 						System.out.println("Stomp server connected.");
+
+						// 初始化事件订阅
+						mySQLClient.query("select * from aag_events;", ar -> this.subscribeevents(ar));
+						
 					}
 				});
 	}
@@ -282,6 +287,8 @@ public class MainVerticle extends AbstractVerticle {
 			
 			List<JsonObject> registeredEvents = rs.getRows();
 			
+			System.out.println(registeredEvents.size() + " events registered.");
+			
 			for (JsonObject regEvent : registeredEvents) {
 				this.subscribe(regEvent);
 			}
@@ -291,6 +298,8 @@ public class MainVerticle extends AbstractVerticle {
 	}
 	
 	private void subscribe(JsonObject event) {
+		System.out.println(event.encode());
+		
 		String saPrefix = event.getString("SA_PREFIX");
 		String eventId = event.getString("EVENT_ID");
 		String eventType = event.getString("EVENT_TYPE");
@@ -308,12 +317,27 @@ public class MainVerticle extends AbstractVerticle {
 				cron5m.schedule(handler -> {
 					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
 
-					JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", System.currentTimeMillis()));
+					long triggerTime = System.currentTimeMillis();
+					
+					JsonObject output = new JsonObject()
+							.put("yyyy", Utils.getTimeFormat(triggerTime, "yyyy"))
+							.put("MM", Utils.getTimeFormat(triggerTime, "MM"))
+							.put("dd", Utils.getTimeFormat(triggerTime, "dd"))
+							.put("HH", Utils.getTimeFormat(triggerTime, "HH"))
+							.put("mm", Utils.getTimeFormat(triggerTime, "mm"))
+							.put("ss", Utils.getTimeFormat(triggerTime, "ss"));
+					
+					JsonObject body = new JsonObject().put("context", new JsonObject()
+							.put("trigger_time", triggerTime)
+							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+							.put("output", output));
 					System.out.println("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
 
 				});
+
+				System.out.println("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
 				e.printStackTrace();
 			}
@@ -332,7 +356,7 @@ public class MainVerticle extends AbstractVerticle {
 		System.out.println(eventId + " : " + message.encode());
 
 		// 查询任务, 分发事件
-		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%';", ar -> this.dispatchEvents(event, message, ar));
+		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%';", ar -> this.dispatchEvents(event, message.getJsonObject("context"), ar));
 	}
 	
 	private void dispatchEvents(JsonObject event, JsonObject message, AsyncResult<ResultSet> ar) {
@@ -340,19 +364,27 @@ public class MainVerticle extends AbstractVerticle {
 			ResultSet rs = ar.result();
 
 			List<JsonObject> tasks = rs.getRows();
-			
+
+			System.out.println(tasks.size() + " tasks registered.");
+
 			for (JsonObject task : tasks) {
 				if (accept(task, event, message)) {
+					System.out.println("task " + task.getString("TASK_NAME") + " accepted.");
 					JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
 					
 					String taskUrl = runwith.getString("url");
 					
-					HttpRequest<Buffer> request = client.getAbs(taskUrl);
+					HttpRequest<Buffer> request = client.postAbs(taskUrl);
 					
 					JsonObject body = new JsonObject();
 					body.put("data", message);
 					
+					System.out.println("task " + task.getString("TASK_NAME") + " run with " + taskUrl);
+					System.out.println("task " + task.getString("TASK_NAME") + " run payload " + body.encode());
+					
 					request.sendJsonObject(body, handler -> this.callback(task, event, message, handler));
+				} else {
+					System.out.println("task " + task.getString("TASK_NAME") + " unaccepted.");
 				}
 			}
 		} else {
@@ -363,14 +395,39 @@ public class MainVerticle extends AbstractVerticle {
 	private boolean accept(JsonObject task, JsonObject event, JsonObject message) {
 		JsonObject runat = new JsonObject(task.getString("TASK_RUNAT"));
 		
+		System.out.println("event output " + message.encode());
+		System.out.println("event runat " + runat.encode());
+		
 		String taskEventId = runat.getString("eventId");
+		JsonArray filters = runat.getJsonArray("filters", new JsonArray());
 		String eventId = event.getString("EVENT_ID");
 		
-		if (!Utils.isEmpty(taskEventId) && taskEventId.equals(eventId)) {
-			return true;
+		if (Utils.isEmpty(taskEventId) || !taskEventId.equals(eventId)) {
+			return false;
 		}
 		
-		return false;
+		for (int i = 0; i < filters.size(); i ++) {
+			JsonObject filter = filters.getJsonObject(i);
+			
+			String name = filter.getString("name", "");
+			String value = filter.getString("value", "");
+			
+			if (Utils.isEmpty(name) || Utils.isEmpty(value)) {
+				continue;
+			}
+			
+			JsonObject output = message.getJsonObject("output", new JsonObject());
+			
+			if (output.isEmpty()) {
+				return false;
+			}
+			
+			if (!value.equals(output.getString(name))) {
+				return false;
+			}
+		}
+		
+		return true;
 	}
 	
 	private void callback(JsonObject task, JsonObject event, JsonObject message, AsyncResult<HttpResponse<Buffer>> ar) {

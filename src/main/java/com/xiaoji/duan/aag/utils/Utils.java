@@ -1,5 +1,7 @@
 package com.xiaoji.duan.aag.utils;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Map.Entry;
 
@@ -30,6 +32,16 @@ public class Utils {
 		}
 		
 		return stringheaders.toString();
+	}
+	
+	public static String getFormattedTime(long timestamp) {
+		SimpleDateFormat myFmt = new SimpleDateFormat("yyyy年MM月dd日 HH时mm分ss秒");
+		return myFmt.format(new Date(timestamp));
+	}
+	
+	public static String getTimeFormat(long timestamp, String format) {
+		SimpleDateFormat myFmt = new SimpleDateFormat(format);
+		return myFmt.format(new Date(timestamp));
 	}
 	
 	public static String stringCookies(CookieStore cookies, String domain, String path) {
