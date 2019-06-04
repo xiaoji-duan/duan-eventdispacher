@@ -1,7 +1,9 @@
 package com.xiaoji.duan.aag;
 
 import java.text.ParseException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.xiaoji.duan.aag.cron.CronTrigger;
@@ -16,6 +18,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.eventbus.MessageProducer;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.asyncsql.MySQLClient;
@@ -30,6 +33,7 @@ import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
 
 /**
  * 
@@ -100,6 +104,28 @@ public class MainVerticle extends AbstractVerticle {
 
 		Router router = Router.router(vertx);
 		
+		Set<HttpMethod> allowedMethods = new HashSet<HttpMethod>();
+		allowedMethods.add(HttpMethod.OPTIONS);
+		allowedMethods.add(HttpMethod.GET);
+		allowedMethods.add(HttpMethod.POST);
+		allowedMethods.add(HttpMethod.PUT);
+		allowedMethods.add(HttpMethod.DELETE);
+		allowedMethods.add(HttpMethod.CONNECT);
+		allowedMethods.add(HttpMethod.PATCH);
+		allowedMethods.add(HttpMethod.HEAD);
+		allowedMethods.add(HttpMethod.TRACE);
+
+		router.route().handler(CorsHandler.create("*")
+				.allowedMethods(allowedMethods)
+				.allowedHeader("*")
+				.allowedHeader("Content-Type")
+				.allowedHeader("lt")
+				.allowedHeader("pi")
+				.allowedHeader("pv")
+				.allowedHeader("di")
+				.allowedHeader("dt")
+				.allowedHeader("ai"));
+
 		router.route("/aag/register/*").handler(BodyHandler.create());
 		router.route("/aag/register/events").produces("application/json").handler(this::registerevents);
 		router.route("/aag/register/tasks").produces("application/json").handler(this::registertasks);
@@ -170,7 +196,12 @@ public class MainVerticle extends AbstractVerticle {
 						updateparams,
 						handler));
 		
-		ctx.response().end("{'code': '', 'message': ''}");
+		JsonObject resp = new JsonObject();
+		resp.put("code", "0");
+		resp.put("message", "");
+		resp.put("data", new JsonObject());
+		
+		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
 	}
 
 	private void registertasks(RoutingContext ctx) {
@@ -216,8 +247,13 @@ public class MainVerticle extends AbstractVerticle {
 						"update aag_tasks set sa_name = ?, task_type = ?, task_name = ?, task_runat = ?, task_runwith = ? where sa_prefix = ? and task_id = ?",
 						updateparams,
 						handler));
+
+		JsonObject resp = new JsonObject();
+		resp.put("code", "0");
+		resp.put("message", "");
+		resp.put("data", new JsonObject());
 		
-		ctx.response().end("{'code': '', 'message': ''}");
+		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
 	}
 
 	private void registeractions(RoutingContext ctx) {
@@ -261,7 +297,12 @@ public class MainVerticle extends AbstractVerticle {
 						updateparams,
 						handler));
 		
-		ctx.response().end("{'code': '', 'message': ''}");
+		JsonObject resp = new JsonObject();
+		resp.put("code", "0");
+		resp.put("message", "");
+		resp.put("data", new JsonObject());
+		
+		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
 	}
 	
 	private void ifexist(String insert, JsonArray insertparams, String update, JsonArray updateparams, AsyncResult<ResultSet> ar) {
