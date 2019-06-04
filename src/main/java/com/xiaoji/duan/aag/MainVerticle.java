@@ -373,16 +373,16 @@ public class MainVerticle extends AbstractVerticle {
 					JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
 					
 					String taskUrl = runwith.getString("url");
+					JsonObject payload = runwith.getJsonObject("payload", new JsonObject());
 					
 					HttpRequest<Buffer> request = client.postAbs(taskUrl);
 					
-					JsonObject body = new JsonObject();
-					body.put("data", message);
+					payload.put("event", message);
 					
 					System.out.println("task " + task.getString("TASK_NAME") + " run with " + taskUrl);
-					System.out.println("task " + task.getString("TASK_NAME") + " run payload " + body.encode());
+					System.out.println("task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
 					
-					request.sendJsonObject(body, handler -> this.callback(task, event, message, handler));
+					request.sendJsonObject(payload, handler -> this.callback(task, event, message, handler));
 				} else {
 					System.out.println("task " + task.getString("TASK_NAME") + " unaccepted.");
 				}
