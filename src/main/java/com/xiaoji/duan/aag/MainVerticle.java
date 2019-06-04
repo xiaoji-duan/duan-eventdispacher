@@ -1,0 +1,433 @@
+package com.xiaoji.duan.aag;
+
+import java.text.ParseException;
+import java.util.List;
+import java.util.UUID;
+
+import com.xiaoji.duan.aag.cron.CronTrigger;
+import com.xiaoji.duan.aag.service.db.CreateTable;
+import com.xiaoji.duan.aag.utils.Utils;
+
+import io.vertx.amqpbridge.AmqpBridge;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.eventbus.Message;
+import io.vertx.core.eventbus.MessageConsumer;
+import io.vertx.core.eventbus.MessageProducer;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.asyncsql.MySQLClient;
+import io.vertx.ext.sql.ResultSet;
+import io.vertx.ext.sql.SQLClient;
+import io.vertx.ext.stomp.Frame;
+import io.vertx.ext.stomp.StompClient;
+import io.vertx.ext.stomp.StompClientConnection;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.client.HttpRequest;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.handler.BodyHandler;
+
+/**
+ * 
+ * 事件分发 短应用
+ * 
+ * 事件短应用 发起 注册事件 动作短应用 发起 注册动作 任务短应用 发起 注册任务
+ * 
+ * 任务包含 触发事件或者事件组合 触发动作 动作成功处理 动作失败处理
+ * 
+ * task_runat {
+ *   eventId: 'eventId'
+ * }
+ * 
+ * task_runwith {
+ *   url: 'url',
+ *   success: {
+ *     url: 'url'
+ *   },
+ *   error: {
+ *     url: 'url'
+ *   }
+ * }
+ * 
+ * @author 席理加@效吉软件
+ *
+ */
+public class MainVerticle extends AbstractVerticle {
+
+	private SQLClient mySQLClient = null;
+	private WebClient client = null;
+	private AmqpBridge bridge = null;
+
+	@Override
+	public void start(Future<Void> startFuture) throws Exception {
+		client = WebClient.create(vertx);
+
+		JsonObject mySQLClientConfig = new JsonObject().put("username", config().getString("mysql.username", "root"))
+				.put("password", config().getString("mysql.password", "1234"))
+				.put("host", config().getString("mysql.host", "mysql"))
+				.put("database", config().getString("mysql.database", "duan"));
+		mySQLClient = MySQLClient.createShared(vertx, mySQLClientConfig);
+
+		// 初始化数据库
+		CreateTable ct = new CreateTable();
+		List<String> ddls = ct.getDdl();
+
+		for (String ddl : ddls) {
+			mySQLClient.update(ddl, update -> {
+
+				if (update.succeeded()) {
+					System.out.println("ddl");
+				} else {
+					update.cause().printStackTrace(System.out);
+				}
+			});
+		}
+
+		bridge = AmqpBridge.create(vertx);
+
+		bridge.endHandler(handler -> {
+			connectStompServer();
+		});
+		connectStompServer();
+
+		// 初始化事件订阅
+		mySQLClient.query("select * from aag_events;", ar -> this.subscribeevents(ar));
+		
+		Router router = Router.router(vertx);
+		
+		router.route("/aag/register/*").handler(BodyHandler.create());
+		router.route("/aag/register/events").produces("application/json").handler(this::registerevents);
+		router.route("/aag/register/tasks").produces("application/json").handler(this::registertasks);
+		router.route("/aag/register/actions").produces("application/json").handler(this::registeractions);
+		
+		vertx.createHttpServer().requestHandler(router::accept).listen(8080, http -> {
+			if (http.succeeded()) {
+				startFuture.complete();
+				System.out.println("HTTP server started on http://localhost:8080");
+			} else {
+				startFuture.fail(http.cause());
+			}
+		});
+	}
+	
+	private void connectStompServer() {
+		bridge.start(config().getString("stomp.server.host", "sa-amq"),
+				config().getInteger("stomp.server.port", 5672), res -> {
+					if (res.failed()) {
+						res.cause().printStackTrace();
+						connectStompServer();
+					} else {
+						System.out.println("Stomp server connected.");
+					}
+				});
+	}
+	
+	private void registerevents(RoutingContext ctx) {
+		System.out.println(ctx.getBodyAsString());
+		JsonObject body = ctx.getBodyAsJson();
+		
+		String saName = body.getString("saName");
+		String saPrefix = body.getString("saPrefix");
+		String eventId = body.getString("eventId");
+		String eventType = body.getString("eventType");
+		String eventName = body.getString("eventName");
+		
+		JsonArray params = new JsonArray();
+		params.add(saPrefix);
+		params.add(eventId);
+		
+		JsonArray insertparams = new JsonArray();
+		insertparams.add(UUID.randomUUID().toString());
+		insertparams.add(saName);
+		insertparams.add(saPrefix);
+		insertparams.add(eventId);
+		insertparams.add(eventType);
+		insertparams.add(eventName);
+
+		JsonArray updateparams = new JsonArray();
+		updateparams.add(saName);
+		updateparams.add(eventType);
+		updateparams.add(eventName);
+		updateparams.add(saPrefix);
+		updateparams.add(eventId);
+
+		mySQLClient.queryWithParams(
+				"select * from aag_events where sa_prefix = ? and event_id = ?",
+				params,
+				handler -> this.ifexist(
+						"insert into aag_events(unionid, sa_name, sa_prefix, event_id, event_type, event_name, create_time) values(?, ?, ?, ?, ?, ?, now());",
+						insertparams,
+						"update aag_events set sa_name = ?, event_type = ?, event_name = ? where sa_prefix = ? and event_id = ?;",
+						updateparams,
+						handler));
+		
+		ctx.response().end("{'code': '', 'message': ''}");
+	}
+
+	private void registertasks(RoutingContext ctx) {
+		JsonObject body = ctx.getBodyAsJson();
+		
+		String saName = body.getString("saName");
+		String saPrefix = body.getString("saPrefix");
+		String taskId = body.getString("taskId");
+		String taskType = body.getString("taskType");
+		String taskName = body.getString("taskName");
+		String taskRunAt = body.getString("taskRunAt");
+		String taskRunWith = body.getString("taskRunWith");
+		
+		JsonArray params = new JsonArray();
+		params.add(saPrefix);
+		params.add(taskId);
+		
+		JsonArray insertparams = new JsonArray();
+		insertparams.add(UUID.randomUUID().toString());
+		insertparams.add(saName);
+		insertparams.add(saPrefix);
+		insertparams.add(taskId);
+		insertparams.add(taskType);
+		insertparams.add(taskName);
+		insertparams.add(taskRunAt);
+		insertparams.add(taskRunWith);
+
+		JsonArray updateparams = new JsonArray();
+		updateparams.add(saName);
+		updateparams.add(taskType);
+		updateparams.add(taskName);
+		updateparams.add(taskRunAt);
+		updateparams.add(taskRunWith);
+		updateparams.add(saPrefix);
+		updateparams.add(taskId);
+
+		mySQLClient.queryWithParams(
+				"select * from aag_tasks where sa_prefix = ? and task_id = ?;",
+				params,
+				handler -> this.ifexist(
+						"insert into aag_tasks(unionid, sa_name, sa_prefix, task_id, task_type, task_name, task_runat, task_runwith, create_time) values(?, ?, ?, ?, ?, ?, ?, ?, now())",
+						insertparams,
+						"update aag_tasks set sa_name = ?, task_type = ?, task_name = ?, task_runat = ?, task_runwith = ? where sa_prefix = ? and task_id = ?",
+						updateparams,
+						handler));
+		
+		ctx.response().end("{'code': '', 'message': ''}");
+	}
+
+	private void registeractions(RoutingContext ctx) {
+		JsonObject body = ctx.getBodyAsJson();
+		
+		String saName = body.getString("saName");
+		String saPrefix = body.getString("saPrefix");
+		String actionId = body.getString("actionId");
+		String actionType = body.getString("actionType");
+		String actionName = body.getString("actionName");
+		String actionRunWith = body.getString("actionRunWith");
+		
+		JsonArray params = new JsonArray();
+		params.add(saPrefix);
+		params.add(actionId);
+		
+		JsonArray insertparams = new JsonArray();
+		insertparams.add(UUID.randomUUID().toString());
+		insertparams.add(saName);
+		insertparams.add(saPrefix);
+		insertparams.add(actionId);
+		insertparams.add(actionType);
+		insertparams.add(actionName);
+		insertparams.add(actionRunWith);
+
+		JsonArray updateparams = new JsonArray();
+		updateparams.add(saName);
+		updateparams.add(actionType);
+		updateparams.add(actionName);
+		updateparams.add(actionRunWith);
+		updateparams.add(saPrefix);
+		updateparams.add(actionId);
+
+		mySQLClient.queryWithParams(
+				"select * from aag_actions where sa_prefix = ? and action_id = ?",
+				params,
+				handler -> this.ifexist(
+						"insert into aag_actions(unionid, sa_name, sa_prefix, action_id, action_type, action_name, action_runwith, create_time) values(?, ?, ?, ?, ?, ?, ?, now());",
+						insertparams,
+						"update aag_actions set sa_name = ?, action_type = ?, action_name = ?, action_runwith = ? where sa_prefix = ? and action_id = ?;",
+						updateparams,
+						handler));
+		
+		ctx.response().end("{'code': '', 'message': ''}");
+	}
+	
+	private void ifexist(String insert, JsonArray insertparams, String update, JsonArray updateparams, AsyncResult<ResultSet> ar) {
+		if (ar.succeeded()) {
+			ResultSet rs = ar.result();
+			
+			if (rs.getNumRows() > 0) {
+				// 存在记录 更新
+				mySQLClient.updateWithParams(update, updateparams, handler -> {});
+			} else {
+				// 不存在记录 插入
+				mySQLClient.updateWithParams(insert, insertparams, handler -> {});
+			}
+			
+		} else {
+			ar.cause().printStackTrace();
+		}
+	}
+
+	private void subscribeevents(AsyncResult<ResultSet> ar) {
+		if (ar.succeeded()) {
+			ResultSet rs = ar.result();
+			
+			List<JsonObject> registeredEvents = rs.getRows();
+			
+			for (JsonObject regEvent : registeredEvents) {
+				this.subscribe(regEvent);
+			}
+		} else {
+			ar.cause().printStackTrace();
+		}
+	}
+	
+	private void subscribe(JsonObject event) {
+		String saPrefix = event.getString("SA_PREFIX");
+		String eventId = event.getString("EVENT_ID");
+		String eventType = event.getString("EVENT_TYPE");
+		
+		String trigger = saPrefix.toLowerCase() + "_" + eventId.toLowerCase();
+		
+		MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
+		System.out.println("Event [" + trigger + "] subscribed.");
+		consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
+
+		if ("QUARTZ.5M".equals(eventType)) {
+			try {
+				CronTrigger cron5m = new CronTrigger(vertx, "0 0/5 * * * ?");
+				
+				cron5m.schedule(handler -> {
+					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+					JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", System.currentTimeMillis()));
+					System.out.println("Event [" + trigger + "] triggered.");
+
+					producer.send(new JsonObject().put("body", body));
+
+				});
+			} catch (ParseException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	private void eventTriggered(JsonObject event, Message<JsonObject> received) {
+		String eventId = event.getString("EVENT_ID");
+		
+		if (!(received.body().getValue("body") instanceof JsonObject)) {
+			System.out.println("Message content is not JsonObject, process stopped.");
+			return;
+		}
+		
+		JsonObject message = received.body().getJsonObject("body");
+		System.out.println(eventId + " : " + message.encode());
+
+		// 查询任务, 分发事件
+		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%';", ar -> this.dispatchEvents(event, message, ar));
+	}
+	
+	private void dispatchEvents(JsonObject event, JsonObject message, AsyncResult<ResultSet> ar) {
+		if (ar.succeeded()) {
+			ResultSet rs = ar.result();
+
+			List<JsonObject> tasks = rs.getRows();
+			
+			for (JsonObject task : tasks) {
+				if (accept(task, event, message)) {
+					JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
+					
+					String taskUrl = runwith.getString("url");
+					
+					HttpRequest<Buffer> request = client.getAbs(taskUrl);
+					
+					JsonObject body = new JsonObject();
+					body.put("data", message);
+					
+					request.sendJsonObject(body, handler -> this.callback(task, event, message, handler));
+				}
+			}
+		} else {
+			ar.cause().printStackTrace();
+		}
+	}
+	
+	private boolean accept(JsonObject task, JsonObject event, JsonObject message) {
+		JsonObject runat = new JsonObject(task.getString("TASK_RUNAT"));
+		
+		String taskEventId = runat.getString("eventId");
+		String eventId = event.getString("EVENT_ID");
+		
+		if (!Utils.isEmpty(taskEventId) && taskEventId.equals(eventId)) {
+			return true;
+		}
+		
+		return false;
+	}
+	
+	private void callback(JsonObject task, JsonObject event, JsonObject message, AsyncResult<HttpResponse<Buffer>> ar) {
+		
+		String taskSuccessUrl = "";
+		String taskErrorUrl = "";
+
+		// 成功或者失败处理时，任务为空
+		if (task != null) {
+			JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
+			
+			taskSuccessUrl = (runwith.getJsonObject("success") == null ? new JsonObject() : runwith.getJsonObject("success")).getString("url");
+			taskErrorUrl = (runwith.getJsonObject("error") == null ? new JsonObject() : runwith.getJsonObject("error")).getString("url");
+		}
+
+		if (ar.succeeded()) {
+			HttpResponse<Buffer> response = ar.result();
+			
+			int statusCode = response.statusCode();
+			
+			if (statusCode == 200) {
+				
+				if (!Utils.isEmpty(taskSuccessUrl)) {
+					JsonObject resp = response.bodyAsJsonObject();
+					
+					JsonObject data = resp.getJsonObject("data");
+
+					HttpRequest<Buffer> request = client.getAbs(taskSuccessUrl);
+					
+					JsonObject body = new JsonObject();
+					body.put("data", data);
+					
+					request.sendJsonObject(body, handler -> this.callback(null, event, message, handler));
+				}
+			} else {
+				// 调用异常处理
+				if (!Utils.isEmpty(taskErrorUrl)) {
+					HttpRequest<Buffer> request = client.getAbs(taskErrorUrl);
+
+					JsonObject body = new JsonObject();
+					body.put("data", message);
+					
+					request.sendJsonObject(body, handler -> this.callback(null, event, message, handler));
+				}
+			}
+		} else {
+			ar.cause().printStackTrace();
+			
+			// 调用异常处理
+			if (!Utils.isEmpty(taskErrorUrl)) {
+				HttpRequest<Buffer> request = client.getAbs(taskErrorUrl);
+
+				JsonObject body = new JsonObject();
+				body.put("data", message);
+				
+				request.sendJsonObject(body, handler -> this.callback(null, event, message, handler));
+			}
+		}
+	}
+}
