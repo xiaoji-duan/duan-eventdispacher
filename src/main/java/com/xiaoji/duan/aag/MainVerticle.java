@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.thymeleaf.util.StringUtils;
+
 import com.xiaoji.duan.aag.cron.CronTrigger;
 import com.xiaoji.duan.aag.service.db.CreateTable;
 import com.xiaoji.duan.aag.utils.Utils;
@@ -207,6 +209,12 @@ public class MainVerticle extends AbstractVerticle {
 	private void registertasks(RoutingContext ctx) {
 		JsonObject body = ctx.getBodyAsJson();
 		
+		String ipAddress = ctx.request().getHeader("x-forwarded-for");
+		
+		if (StringUtils.isEmpty(ipAddress)) {
+			ipAddress = "222.64.177.189";	//上海IP
+		}
+		
 		String saName = body.getString("saName");
 		String saPrefix = body.getString("saPrefix");
 		String taskId = body.getString("taskId");
@@ -214,6 +222,23 @@ public class MainVerticle extends AbstractVerticle {
 		String taskName = body.getString("taskName");
 		String taskRunAt = body.getString("taskRunAt");
 		String taskRunWith = body.getString("taskRunWith");
+		
+		//检查RunWith是否符合JSON格式
+		try {
+			JsonObject runWith = new JsonObject(taskRunWith);
+			
+			//如果要求设置客户端ip，则进行设置，否则不设置
+			if (runWith.containsKey("payload")) {
+				if (runWith.getJsonObject("payload") != null && runWith.getJsonObject("payload").containsKey("clientip")) {
+					runWith.getJsonObject("payload").put("clientip", ipAddress);
+					taskRunWith = runWith.encode();
+				}
+			}
+		} catch (Exception e) {
+			if (StringUtils.isEmpty(taskRunWith)) {
+				taskRunWith = new JsonObject().encode();
+			}
+		}
 		
 		JsonArray params = new JsonArray();
 		params.add(saPrefix);
@@ -356,6 +381,39 @@ public class MainVerticle extends AbstractVerticle {
 				CronTrigger cron5m = new CronTrigger(vertx, "0 0/5 * * * ?");
 				
 				cron5m.schedule(handler -> {
+					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+					long triggerTime = System.currentTimeMillis();
+					
+					JsonObject output = new JsonObject()
+							.put("yyyy", Utils.getTimeFormat(triggerTime, "yyyy"))
+							.put("MM", Utils.getTimeFormat(triggerTime, "MM"))
+							.put("dd", Utils.getTimeFormat(triggerTime, "dd"))
+							.put("HH", Utils.getTimeFormat(triggerTime, "HH"))
+							.put("mm", Utils.getTimeFormat(triggerTime, "mm"))
+							.put("ss", Utils.getTimeFormat(triggerTime, "ss"));
+					
+					JsonObject body = new JsonObject().put("context", new JsonObject()
+							.put("trigger_time", triggerTime)
+							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+							.put("output", output));
+					System.out.println("Event [" + trigger + "] triggered.");
+
+					producer.send(new JsonObject().put("body", body));
+
+				});
+
+				System.out.println("Event [" + trigger + "] scheduled.");
+			} catch (ParseException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		if ("QUARTZ.1H".equals(eventType)) {
+			try {
+				CronTrigger cron1h = new CronTrigger(vertx, "0 0 0/1 * * ?");
+				
+				cron1h.schedule(handler -> {
 					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
 
 					long triggerTime = System.currentTimeMillis();
