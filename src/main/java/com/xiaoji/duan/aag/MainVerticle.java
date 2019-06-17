@@ -213,6 +213,10 @@ public class MainVerticle extends AbstractVerticle {
 		
 		if (StringUtils.isEmpty(ipAddress)) {
 			ipAddress = "222.64.177.189";	//上海IP
+		} else if (ipAddress.contains(",")) {
+			String[] addresses = ipAddress.split(",");
+			
+			ipAddress = addresses[0].trim();
 		}
 		
 		String saName = body.getString("saName");
@@ -229,7 +233,7 @@ public class MainVerticle extends AbstractVerticle {
 			
 			//如果要求设置客户端ip，则进行设置，否则不设置
 			if (runWith.containsKey("payload")) {
-				if (runWith.getJsonObject("payload") != null && runWith.getJsonObject("payload").containsKey("clientip")) {
+				if (runWith.getJsonObject("payload") != null && !runWith.getJsonObject("payload").containsKey("clientip")) {
 					runWith.getJsonObject("payload").put("clientip", ipAddress);
 					taskRunWith = runWith.encode();
 				}
