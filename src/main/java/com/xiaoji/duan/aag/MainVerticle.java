@@ -267,6 +267,7 @@ public class MainVerticle extends AbstractVerticle {
 		updateparams.add(saPrefix);
 		updateparams.add(taskId);
 
+		System.out.println("refresh task with " + params.encode());
 		mySQLClient.queryWithParams(
 				"select * from aag_tasks where sa_prefix = ? and task_id = ?;",
 				params,
@@ -316,6 +317,7 @@ public class MainVerticle extends AbstractVerticle {
 		updateparams.add(saPrefix);
 		updateparams.add(actionId);
 
+		System.out.println("refresh action with " + params.encode());
 		mySQLClient.queryWithParams(
 				"select * from aag_actions where sa_prefix = ? and action_id = ?",
 				params,
@@ -339,9 +341,11 @@ public class MainVerticle extends AbstractVerticle {
 			ResultSet rs = ar.result();
 			
 			if (rs.getNumRows() > 0) {
+				System.out.println("update task with " + updateparams.encode());
 				// 存在记录 更新
 				mySQLClient.updateWithParams(update, updateparams, handler -> {});
 			} else {
+				System.out.println("insert task with " + insertparams.encode());
 				// 不存在记录 插入
 				mySQLClient.updateWithParams(insert, insertparams, handler -> {});
 			}
