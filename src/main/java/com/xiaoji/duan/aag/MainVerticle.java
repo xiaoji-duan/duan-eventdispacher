@@ -6,6 +6,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.apache.commons.codec.digest.Crypt;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.codec.digest.HmacAlgorithms;
+import org.apache.commons.codec.digest.HmacUtils;
 import org.thymeleaf.util.StringUtils;
 
 import com.xiaoji.duan.aag.cron.CronTrigger;
@@ -21,9 +25,11 @@ import io.vertx.core.eventbus.Message;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.eventbus.MessageProducer;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.asyncsql.MySQLClient;
+import io.vertx.ext.auth.impl.hash.SHA512;
 import io.vertx.ext.sql.ResultSet;
 import io.vertx.ext.sql.SQLClient;
 import io.vertx.ext.stomp.Frame;
@@ -132,7 +138,10 @@ public class MainVerticle extends AbstractVerticle {
 		router.route("/aag/register/events").produces("application/json").handler(this::registerevents);
 		router.route("/aag/register/tasks").produces("application/json").handler(this::registertasks);
 		router.route("/aag/register/actions").produces("application/json").handler(this::registeractions);
-		
+
+		router.route("/aag/webhooks/*").handler(BodyHandler.create());
+		router.route("/aag/webhooks/github/v3").produces("application/json").handler(this::githubv3webhook);
+
 		vertx.createHttpServer().requestHandler(router::accept).listen(8080, http -> {
 			if (http.succeeded()) {
 				startFuture.complete();
@@ -286,9 +295,32 @@ public class MainVerticle extends AbstractVerticle {
 		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
 	}
 
+	private void githubv3webhook(RoutingContext ctx) {
+		HttpServerRequest req = ctx.request();
+		String sign = req.getHeader("X-Hub-Signature");
+		String sb = ctx.getBodyAsString();
+
+		JsonObject body = null;
+
+		if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
+			HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+			String signature = hm1.hmacHex(sb);
+
+			if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
+				body = ctx.getBodyAsJson();
+			}
+		} else {
+			//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
+		}
+
+		System.out.println("Github webhook launched with " + body == null? "empty" : body.encodePrettily());
+		
+		ctx.response().end("ok");
+	}
+	
 	private void registeractions(RoutingContext ctx) {
 		JsonObject body = ctx.getBodyAsJson();
-		
+
 		String saName = body.getString("saName");
 		String saPrefix = body.getString("saPrefix");
 		String actionId = body.getString("actionId");
