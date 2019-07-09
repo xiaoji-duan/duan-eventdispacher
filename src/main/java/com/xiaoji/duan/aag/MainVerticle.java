@@ -2,7 +2,9 @@ package com.xiaoji.duan.aag;
 
 import java.text.ParseException;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 
@@ -301,39 +303,81 @@ public class MainVerticle extends AbstractVerticle {
 		
 		HttpServerRequest req = ctx.request();
 		
-		if ("github".equals(owner) && "v3".equals(version)) {
-			String sign = req.getHeader("X-Hub-Signature");
-			String sb = ctx.getBodyAsString();
-	
-			JsonObject body = null;
-	
-			if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
-				HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
-				String signature = hm1.hmacHex(sb);
-	
-				if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
-					body = ctx.getBodyAsJson();
+		try {
+			if ("github".equals(owner) && "v3".equals(version)) {
+				String sign = req.getHeader("X-Hub-Signature");
+				String sb = ctx.getBodyAsString();
+		
+				JsonObject message = null;
+		
+				if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
+					HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+					String signature = hm1.hmacHex(sb);
+		
+					if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
+						String trigger = "aag" + "_" + "WEBHOOK_GITHUB".toLowerCase();
+
+						message = ctx.getBodyAsJson();
+						
+						MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+						long triggerTime = System.currentTimeMillis();
+						
+						JsonObject output = new JsonObject()
+								.put("webhook", "github")
+								.put("payload", message);
+
+						JsonObject body = new JsonObject().put("context", new JsonObject()
+								.put("trigger_time", triggerTime)
+								.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+								.put("output", output));
+						System.out.println("Event [" + trigger + "] triggered.");
+
+						producer.send(new JsonObject().put("body", body));
+					}
+				} else {
+					//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
 				}
-			} else {
-				//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
-			}
-	
-			System.out.println("Github webhook launched with " + body == null? "empty" : body.encodePrettily());
-		}
 		
-		if ("fir.im".equals(owner) && "v3".equals(version)) {
-			String sb = ctx.getBodyAsString();
+				System.out.println("Github webhook launched with " + message == null? "empty" : message.encodePrettily());
+			}
 			
-			JsonObject body = null;
+			if ("fir.im".equals(owner) && "v3".equals(version)) {
+				String trigger = "aag" + "_" + "WEBHOOK_FIR.IM".toLowerCase();
 
-			if (!StringUtils.isEmpty(sb)) {
-				body = ctx.getBodyAsJson();
+				JsonObject message = new JsonObject();
+				
+				Iterator<Entry<String, String>> params = ctx.request().params().iterator();
+				
+				while(params.hasNext()) {
+					Entry<String, String> entry = params.next();
+
+					message.put(entry.getKey(), entry.getValue());
+				}
+
+				MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+				long triggerTime = System.currentTimeMillis();
+				
+				JsonObject output = new JsonObject()
+						.put("webhook", "fir.im")
+						.put("payload", message);
+
+				JsonObject body = new JsonObject().put("context", new JsonObject()
+						.put("trigger_time", triggerTime)
+						.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+						.put("output", output));
+				System.out.println("Event [" + trigger + "] triggered.");
+
+				producer.send(new JsonObject().put("body", body));
+				
+				System.out.println("Fir.im webhook launched with " + message == null? "empty" : message.encodePrettily());
 			}
-
-			System.out.println("Fir.im webhook launched with " + body == null? "empty" : body.encodePrettily());
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			ctx.response().end("ok");
 		}
-		
-		ctx.response().end("ok");
 	}
 	
 	private void registeractions(RoutingContext ctx) {
