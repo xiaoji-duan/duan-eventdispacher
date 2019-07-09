@@ -140,7 +140,7 @@ public class MainVerticle extends AbstractVerticle {
 		router.route("/aag/register/actions").produces("application/json").handler(this::registeractions);
 
 		router.route("/aag/webhooks/*").handler(BodyHandler.create());
-		router.route("/aag/webhooks/github/v3").produces("application/json").handler(this::githubv3webhook);
+		router.route("/aag/webhooks/:webhookowner/:version").produces("application/json").handler(this::webhook);
 
 		vertx.createHttpServer().requestHandler(router::accept).listen(8080, http -> {
 			if (http.succeeded()) {
@@ -295,25 +295,43 @@ public class MainVerticle extends AbstractVerticle {
 		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
 	}
 
-	private void githubv3webhook(RoutingContext ctx) {
+	private void webhook(RoutingContext ctx) {
+		String owner = ctx.pathParam("webhookowner");
+		String version = ctx.pathParam("version");
+		
 		HttpServerRequest req = ctx.request();
-		String sign = req.getHeader("X-Hub-Signature");
-		String sb = ctx.getBodyAsString();
+		
+		if ("github".equals(owner) && "v3".equals(version)) {
+			String sign = req.getHeader("X-Hub-Signature");
+			String sb = ctx.getBodyAsString();
+	
+			JsonObject body = null;
+	
+			if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
+				HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+				String signature = hm1.hmacHex(sb);
+	
+				if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
+					body = ctx.getBodyAsJson();
+				}
+			} else {
+				//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
+			}
+	
+			System.out.println("Github webhook launched with " + body == null? "empty" : body.encodePrettily());
+		}
+		
+		if ("fir.im".equals(owner) && "v3".equals(version)) {
+			String sb = ctx.getBodyAsString();
+			
+			JsonObject body = null;
 
-		JsonObject body = null;
-
-		if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
-			HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
-			String signature = hm1.hmacHex(sb);
-
-			if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
+			if (!StringUtils.isEmpty(sb)) {
 				body = ctx.getBodyAsJson();
 			}
-		} else {
-			//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
-		}
 
-		System.out.println("Github webhook launched with " + body == null? "empty" : body.encodePrettily());
+			System.out.println("Fir.im webhook launched with " + body == null? "empty" : body.encodePrettily());
+		}
 		
 		ctx.response().end("ok");
 	}
