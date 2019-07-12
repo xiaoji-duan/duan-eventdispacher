@@ -3,10 +3,14 @@ package com.xiaoji.duan.aag;
 import java.text.ParseException;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.apache.commons.codec.digest.Crypt;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -79,6 +83,7 @@ public class MainVerticle extends AbstractVerticle {
 	private SQLClient mySQLClient = null;
 	private WebClient client = null;
 	private AmqpBridge bridge = null;
+	private static Map<String, String> GitHubSecrets = new LinkedHashMap<String, String>();
 
 	@Override
 	public void start(Future<Void> startFuture) throws Exception {
@@ -104,6 +109,9 @@ public class MainVerticle extends AbstractVerticle {
 				}
 			});
 		}
+
+		//加载Github安全令牌
+		mySQLClient.query("select * from aag_tasks;", ar -> this.loadsecrets(ar));
 
 		bridge = AmqpBridge.create(vertx);
 
@@ -142,7 +150,7 @@ public class MainVerticle extends AbstractVerticle {
 		router.route("/aag/register/actions").produces("application/json").handler(this::registeractions);
 
 		router.route("/aag/webhooks/*").handler(BodyHandler.create());
-		router.route("/aag/webhooks/:webhookowner/:version").produces("application/json").handler(this::webhook);
+		router.route("/aag/webhooks/:webhookowner/:version/:observer").produces("application/json").handler(this::webhook);
 
 		vertx.createHttpServer().requestHandler(router::accept).listen(8080, http -> {
 			if (http.succeeded()) {
@@ -168,6 +176,57 @@ public class MainVerticle extends AbstractVerticle {
 						
 					}
 				});
+	}
+	
+	private void loadsecrets(AsyncResult<ResultSet> ar) {
+		if (ar.succeeded()) {
+			ResultSet rs = ar.result();
+			
+			List<JsonObject> registeredTasks = rs.getRows();
+			
+			System.out.println(registeredTasks.size() + " tasks registered.");
+			
+			for (JsonObject task : registeredTasks) {
+				String taskRunAt = task.getString("TASK_RUNAT");
+				
+				//检查RunAt是否符合JSON格式
+				try {
+					JsonObject runAt = new JsonObject(taskRunAt);
+					
+					//如果要求设置客户端ip，则进行设置，否则不设置
+					if (runAt.containsKey("filters")) {
+						JsonArray filters = runAt.getJsonArray("filters");
+						if (filters != null && filters.size() > 0 && filters.stream().anyMatch(r -> (r instanceof JsonObject)? ((JsonObject) r).getString("name") == "secret" : false)) {
+							List<Object> objects = filters.stream()
+									.filter(r -> (r instanceof JsonObject)? (((JsonObject) r).getString("name") == "secret" || ((JsonObject) r).getString("name") == "observer") : false)
+									.collect(Collectors.toList());
+							
+							String secret = "";
+							String observer = "";
+							for (Object object : objects) {
+								if (((JsonObject) object).getString("name") == "secret") {
+									secret = ((JsonObject) object).getString("secret", "");
+								}
+
+								if (((JsonObject) object).getString("name") == "observer") {
+									observer = ((JsonObject) object).getString("observer", "");
+								}
+							}
+							
+							if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
+								GitHubSecrets.put(observer, secret);
+							}
+						}
+					}
+				} catch (Exception e) {
+					if (StringUtils.isEmpty(taskRunAt)) {
+						taskRunAt = new JsonObject().encode();
+					}
+				}
+			}
+		} else {
+			ar.cause().printStackTrace();
+		}
 	}
 	
 	private void registerevents(RoutingContext ctx) {
@@ -238,6 +297,41 @@ public class MainVerticle extends AbstractVerticle {
 		String taskRunAt = body.getString("taskRunAt");
 		String taskRunWith = body.getString("taskRunWith");
 		
+		//检查RunAt是否符合JSON格式
+		try {
+			JsonObject runAt = new JsonObject(taskRunAt);
+			
+			//如果要求设置客户端ip，则进行设置，否则不设置
+			if (runAt.containsKey("filters")) {
+				JsonArray filters = runAt.getJsonArray("filters");
+				if (filters != null && filters.size() > 0 && filters.stream().anyMatch(r -> (r instanceof JsonObject)? ((JsonObject) r).getString("name") == "secret" : false)) {
+					List<Object> objects = filters.stream()
+							.filter(r -> (r instanceof JsonObject)? (((JsonObject) r).getString("name") == "secret" || ((JsonObject) r).getString("name") == "observer") : false)
+							.collect(Collectors.toList());
+					
+					String secret = "";
+					String observer = "";
+					for (Object object : objects) {
+						if (((JsonObject) object).getString("name") == "secret") {
+							secret = ((JsonObject) object).getString("secret", "");
+						}
+
+						if (((JsonObject) object).getString("name") == "observer") {
+							observer = ((JsonObject) object).getString("observer", "");
+						}
+					}
+					
+					if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
+						GitHubSecrets.put(observer, secret);
+					}
+				}
+			}
+		} catch (Exception e) {
+			if (StringUtils.isEmpty(taskRunAt)) {
+				taskRunAt = new JsonObject().encode();
+			}
+		}
+		
 		//检查RunWith是否符合JSON格式
 		try {
 			JsonObject runWith = new JsonObject(taskRunWith);
@@ -300,6 +394,7 @@ public class MainVerticle extends AbstractVerticle {
 	private void webhook(RoutingContext ctx) {
 		String owner = ctx.pathParam("webhookowner");
 		String version = ctx.pathParam("version");
+		String observer = ctx.pathParam("observer");
 		
 		HttpServerRequest req = ctx.request();
 		
@@ -311,7 +406,9 @@ public class MainVerticle extends AbstractVerticle {
 				JsonObject message = null;
 		
 				if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
-					HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+					String userSecret = GitHubSecrets.getOrDefault(observer, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+					
+					HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, userSecret);
 					String signature = hm1.hmacHex(sb);
 		
 					if (!StringUtils.isEmpty(signature) && sign.equals("sha1=" + signature)) {
@@ -325,6 +422,7 @@ public class MainVerticle extends AbstractVerticle {
 						
 						JsonObject output = new JsonObject()
 								.put("webhook", "github")
+								.put("observer", observer)
 								.put("payload", message);
 
 						JsonObject body = new JsonObject().put("context", new JsonObject()
@@ -339,7 +437,7 @@ public class MainVerticle extends AbstractVerticle {
 					//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
 				}
 		
-				System.out.println("Github webhook launched with " + message == null? "empty" : message.encodePrettily());
+				System.out.println("Github webhook launched with " + ((message == null)? "empty" : message.encodePrettily()));
 			}
 			
 			if ("fir.im".equals(owner) && "v3".equals(version)) {
@@ -361,6 +459,7 @@ public class MainVerticle extends AbstractVerticle {
 				
 				JsonObject output = new JsonObject()
 						.put("webhook", "fir.im")
+						.put("observer", observer)
 						.put("payload", message);
 
 				JsonObject body = new JsonObject().put("context", new JsonObject()
