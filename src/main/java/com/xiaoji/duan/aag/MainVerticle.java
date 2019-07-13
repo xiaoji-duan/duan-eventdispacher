@@ -422,6 +422,7 @@ public class MainVerticle extends AbstractVerticle {
 						JsonObject output = new JsonObject()
 								.put("webhook", "github")
 								.put("observer", observer)
+								.put("secret", userSecret)
 								.put("payload", message);
 
 						JsonObject body = new JsonObject().put("context", new JsonObject()
