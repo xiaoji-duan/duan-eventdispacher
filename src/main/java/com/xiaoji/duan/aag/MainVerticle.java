@@ -9,11 +9,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
-import org.apache.commons.codec.digest.Crypt;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.codec.digest.HmacAlgorithms;
 import org.apache.commons.codec.digest.HmacUtils;
 import org.thymeleaf.util.StringUtils;
@@ -35,12 +31,8 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.asyncsql.MySQLClient;
-import io.vertx.ext.auth.impl.hash.SHA512;
 import io.vertx.ext.sql.ResultSet;
 import io.vertx.ext.sql.SQLClient;
-import io.vertx.ext.stomp.Frame;
-import io.vertx.ext.stomp.StompClient;
-import io.vertx.ext.stomp.StompClientConnection;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpRequest;
@@ -195,21 +187,23 @@ public class MainVerticle extends AbstractVerticle {
 					
 					//如果要求设置客户端ip，则进行设置，否则不设置
 					if (runAt.containsKey("filters")) {
+						System.out.println("RUNAT has filters");
 						JsonArray filters = runAt.getJsonArray("filters");
 						if (filters != null && filters.size() > 0) {
 
 							String secret = "";
 							String observer = "";
 
-							for (Object object : filters.getList()) {
-								if (object instanceof JsonObject) {
-									if ("secret".equals(((JsonObject) object).getString("name"))) {
-										secret = ((JsonObject) object).getString("value", "");
-									}
+							for (int i = 0; i < filters.size(); i++) {
+								JsonObject json = filters.getJsonObject(i);
+								System.out.println(json.encode());
 
-									if ("observer".equals(((JsonObject) object).getString("name"))) {
-										observer = ((JsonObject) object).getString("value", "");
-									}
+								if ("secret".equals(json.getString("name"))) {
+									secret = json.getString("value", "");
+								}
+
+								if ("observer".equals(json.getString("name"))) {
+									observer = json.getString("value", "");
 								}
 							}
 							
@@ -301,23 +295,26 @@ public class MainVerticle extends AbstractVerticle {
 		//检查RunAt是否符合JSON格式
 		try {
 			JsonObject runAt = new JsonObject(taskRunAt);
-			
+			System.out.println("TASK_RUNAT" + runAt);
 			//如果要求设置客户端ip，则进行设置，否则不设置
 			if (runAt.containsKey("filters")) {
+				System.out.println("RUNAT has filters");
+
 				JsonArray filters = runAt.getJsonArray("filters");
 				if (filters != null && filters.size() > 0) {
 					
 					String secret = "";
 					String observer = "";
-					for (Object object : filters.getList()) {
-						if (object instanceof JsonObject) {
-							if ("secret".equals(((JsonObject) object).getString("name"))) {
-								secret = ((JsonObject) object).getString("value", "");
-							}
 
-							if ("observer".equals(((JsonObject) object).getString("name"))) {
-								observer = ((JsonObject) object).getString("value", "");
-							}
+					for (int i = 0; i < filters.size(); i++) {
+						JsonObject json = filters.getJsonObject(i);
+						System.out.println(json.encode());
+						if ("secret".equals(json.getString("name"))) {
+							secret = json.getString("value", "");
+						}
+
+						if ("observer".equals(json.getString("name"))) {
+							observer = json.getString("value", "");
 						}
 					}
 					
