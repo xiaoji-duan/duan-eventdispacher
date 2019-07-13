@@ -188,7 +188,7 @@ public class MainVerticle extends AbstractVerticle {
 			
 			for (JsonObject task : registeredTasks) {
 				String taskRunAt = task.getString("TASK_RUNAT");
-				
+				System.out.println("TASK_RUNAT : " + taskRunAt);
 				//检查RunAt是否符合JSON格式
 				try {
 					JsonObject runAt = new JsonObject(taskRunAt);
@@ -196,25 +196,26 @@ public class MainVerticle extends AbstractVerticle {
 					//如果要求设置客户端ip，则进行设置，否则不设置
 					if (runAt.containsKey("filters")) {
 						JsonArray filters = runAt.getJsonArray("filters");
-						if (filters != null && filters.size() > 0 && filters.stream().anyMatch(r -> (r instanceof JsonObject)? ((JsonObject) r).getString("name") == "secret" : false)) {
-							List<Object> objects = filters.stream()
-									.filter(r -> (r instanceof JsonObject)? (((JsonObject) r).getString("name") == "secret" || ((JsonObject) r).getString("name") == "observer") : false)
-									.collect(Collectors.toList());
-							
+						if (filters != null && filters.size() > 0) {
+
 							String secret = "";
 							String observer = "";
-							for (Object object : objects) {
-								if (((JsonObject) object).getString("name") == "secret") {
-									secret = ((JsonObject) object).getString("secret", "");
-								}
 
-								if (((JsonObject) object).getString("name") == "observer") {
-									observer = ((JsonObject) object).getString("observer", "");
+							for (Object object : filters.getList()) {
+								if (object instanceof JsonObject) {
+									if ("secret".equals(((JsonObject) object).getString("name"))) {
+										secret = ((JsonObject) object).getString("value", "");
+									}
+
+									if ("observer".equals(((JsonObject) object).getString("name"))) {
+										observer = ((JsonObject) object).getString("value", "");
+									}
 								}
 							}
 							
 							if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
 								GitHubSecrets.put(observer, secret);
+								System.out.println(observer + " <=> " + secret);
 							}
 						}
 					}
@@ -304,25 +305,25 @@ public class MainVerticle extends AbstractVerticle {
 			//如果要求设置客户端ip，则进行设置，否则不设置
 			if (runAt.containsKey("filters")) {
 				JsonArray filters = runAt.getJsonArray("filters");
-				if (filters != null && filters.size() > 0 && filters.stream().anyMatch(r -> (r instanceof JsonObject)? ((JsonObject) r).getString("name") == "secret" : false)) {
-					List<Object> objects = filters.stream()
-							.filter(r -> (r instanceof JsonObject)? (((JsonObject) r).getString("name") == "secret" || ((JsonObject) r).getString("name") == "observer") : false)
-							.collect(Collectors.toList());
+				if (filters != null && filters.size() > 0) {
 					
 					String secret = "";
 					String observer = "";
-					for (Object object : objects) {
-						if (((JsonObject) object).getString("name") == "secret") {
-							secret = ((JsonObject) object).getString("secret", "");
-						}
+					for (Object object : filters.getList()) {
+						if (object instanceof JsonObject) {
+							if ("secret".equals(((JsonObject) object).getString("name"))) {
+								secret = ((JsonObject) object).getString("value", "");
+							}
 
-						if (((JsonObject) object).getString("name") == "observer") {
-							observer = ((JsonObject) object).getString("observer", "");
+							if ("observer".equals(((JsonObject) object).getString("name"))) {
+								observer = ((JsonObject) object).getString("value", "");
+							}
 						}
 					}
 					
 					if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
 						GitHubSecrets.put(observer, secret);
+						System.out.println(observer + " <=> " + secret);
 					}
 				}
 			}
@@ -407,6 +408,7 @@ public class MainVerticle extends AbstractVerticle {
 		
 				if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
 					String userSecret = GitHubSecrets.getOrDefault(observer, config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
+					System.out.println(observer + " <-> " + userSecret);
 					
 					HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, userSecret);
 					String signature = hm1.hmacHex(sb);
