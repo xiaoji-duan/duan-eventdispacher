@@ -47,6 +47,10 @@ import io.vertx.ext.web.handler.CorsHandler;
  * 
  * 事件短应用 发起 注册事件 动作短应用 发起 注册动作 任务短应用 发起 注册任务
  * 
+ * Webhooks事件
+ * 支持GitHub
+ * 支持Fir.im
+ * 
  * 任务包含 触发事件或者事件组合 触发动作 动作成功处理 动作失败处理
  * 
  * task_runat {
