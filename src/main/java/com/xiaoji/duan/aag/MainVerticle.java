@@ -581,6 +581,39 @@ public class MainVerticle extends AbstractVerticle {
 		System.out.println("Event [" + trigger + "] subscribed.");
 		consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
 
+		if ("QUARTZ.1M".equals(eventType)) {
+			try {
+				CronTrigger cron1m = new CronTrigger(vertx, "0 */1 * * * ?");
+				
+				cron1m.schedule(handler -> {
+					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+					long triggerTime = System.currentTimeMillis();
+					
+					JsonObject output = new JsonObject()
+							.put("yyyy", Utils.getTimeFormat(triggerTime, "yyyy"))
+							.put("MM", Utils.getTimeFormat(triggerTime, "MM"))
+							.put("dd", Utils.getTimeFormat(triggerTime, "dd"))
+							.put("HH", Utils.getTimeFormat(triggerTime, "HH"))
+							.put("mm", Utils.getTimeFormat(triggerTime, "mm"))
+							.put("ss", Utils.getTimeFormat(triggerTime, "ss"));
+					
+					JsonObject body = new JsonObject().put("context", new JsonObject()
+							.put("trigger_time", triggerTime)
+							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+							.put("output", output));
+					System.out.println("Event [" + trigger + "] triggered.");
+
+					producer.send(new JsonObject().put("body", body));
+
+				});
+
+				System.out.println("Event [" + trigger + "] scheduled.");
+			} catch (ParseException e) {
+				e.printStackTrace();
+			}
+		}
+		
 		if ("QUARTZ.5M".equals(eventType)) {
 			try {
 				CronTrigger cron5m = new CronTrigger(vertx, "0 0/5 * * * ?");
