@@ -40,7 +40,7 @@ public class CreateTable extends AbstractSql {
 				"  `UNIONID` varchar(36) NOT NULL," +
 				"  `SA_NAME` varchar(256) DEFAULT NULL," +
 				"  `SA_PREFIX` varchar(3) NOT NULL," +
-				"  `TASK_ID` varchar(64) NOT NULL," +
+				"  `TASK_ID` varchar(128) NOT NULL," +
 				"  `TASK_TYPE` varchar(64) NOT NULL," +
 				"  `TASK_NAME` varchar(256) NOT NULL," +
                 "  `TASK_RUNAT` text NOT NULL," +
