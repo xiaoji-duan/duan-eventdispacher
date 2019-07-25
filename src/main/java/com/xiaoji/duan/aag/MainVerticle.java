@@ -419,6 +419,11 @@ public class MainVerticle extends AbstractVerticle {
 
 						message = ctx.getBodyAsJson();
 						
+						//增加可过滤条件
+						String repository = (message != null? message
+								.getJsonObject("repository", new JsonObject())
+								.getString("full_name", "") : "");
+						
 						MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
 
 						long triggerTime = System.currentTimeMillis();
@@ -427,7 +432,8 @@ public class MainVerticle extends AbstractVerticle {
 								.put("webhook", "github")
 								.put("observer", observer)
 								.put("secret", userSecret)
-								.put("payload", message);
+								.put("payload", message)
+								.put("repository", repository);
 
 						JsonObject body = new JsonObject().put("context", new JsonObject()
 								.put("trigger_time", triggerTime)
@@ -457,6 +463,9 @@ public class MainVerticle extends AbstractVerticle {
 					message.put(entry.getKey(), entry.getValue());
 				}
 
+				//增加可过滤条件
+				String link = (message != null? message.getString("link", "") : "");
+				
 				MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
 
 				long triggerTime = System.currentTimeMillis();
@@ -464,7 +473,8 @@ public class MainVerticle extends AbstractVerticle {
 				JsonObject output = new JsonObject()
 						.put("webhook", "fir.im")
 						.put("observer", observer)
-						.put("payload", message);
+						.put("payload", message)
+						.put("link", link);
 
 				JsonObject body = new JsonObject().put("context", new JsonObject()
 						.put("trigger_time", triggerTime)
