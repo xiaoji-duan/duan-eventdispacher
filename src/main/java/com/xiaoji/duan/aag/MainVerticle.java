@@ -137,6 +137,8 @@ public class MainVerticle extends AbstractVerticle {
 				.allowedHeader("pi")
 				.allowedHeader("pv")
 				.allowedHeader("di")
+				.allowedHeader("latitude")
+				.allowedHeader("longitude")
 				.allowedHeader("dt")
 				.allowedHeader("ai"));
 
@@ -442,6 +444,7 @@ public class MainVerticle extends AbstractVerticle {
 						System.out.println("Event [" + trigger + "] triggered.");
 
 						producer.send(new JsonObject().put("body", body));
+						producer.end();
 					}
 				} else {
 					//ctx.response().setStatusCode(403).end("Illegal access, forbbiden!");
@@ -483,6 +486,7 @@ public class MainVerticle extends AbstractVerticle {
 				System.out.println("Event [" + trigger + "] triggered.");
 
 				producer.send(new JsonObject().put("body", body));
+				producer.end();
 				
 				System.out.println("Fir.im webhook launched with " + message == null? "empty" : message.encodePrettily());
 			}
@@ -615,7 +619,7 @@ public class MainVerticle extends AbstractVerticle {
 					System.out.println("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
-
+					producer.end();
 				});
 
 				System.out.println("Event [" + trigger + "] scheduled.");
@@ -648,7 +652,7 @@ public class MainVerticle extends AbstractVerticle {
 					System.out.println("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
-
+					producer.end();
 				});
 
 				System.out.println("Event [" + trigger + "] scheduled.");
@@ -681,7 +685,7 @@ public class MainVerticle extends AbstractVerticle {
 					System.out.println("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
-
+					producer.end();
 				});
 
 				System.out.println("Event [" + trigger + "] scheduled.");
