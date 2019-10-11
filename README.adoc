@@ -1,26 +1,41 @@
-= Aag
+= 事件分发器
 
 image:https://img.shields.io/badge/vert.x-3.6.0-purple.svg[link="https://vertx.io"]
 
-This application was generated using http://start.vertx.io
+分发WEBHOOK事件, 定时事件
 
-== Building
+== 定义与注册事件
 
-To launch your tests:
-```
-./mvnw clean test
-```
-
-To package your application:
-```
-./mvnw clean package
-```
-
-To run your application:
-```
-./mvnw clean exec:java
+```JSON
+TriggerTask {
+  saName:string = ""; //应用名称
+  saPrefix:string = ""; //应用前缀   主键
+  taskId:string = "";   //任务ID     主键
+  taskType:string = ""; //任务类型
+  taskName:string = ""; //任务名称
+  taskRunAt:string = "{}"; //任务运行条件 json string
+  taskRunWith:string = "{}"; //任务运行变量 json string
+}
 ```
 
+```JSON
+RunAt {
+  eventId: "...",
+  filters: [
+    {name: "...", value: "..."}
+  ]
+}
+```
+
+```JSON
+RunWith {
+  url: "..."
+  payload: {
+    name: "value",
+    "..."
+  }
+};
+```
 == Help
 
 * https://vertx.io/docs/[Vert.x Documentation]
