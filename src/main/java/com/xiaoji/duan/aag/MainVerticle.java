@@ -4,6 +4,7 @@ import java.text.ParseException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -713,75 +714,97 @@ public class MainVerticle extends AbstractVerticle {
 		System.out.println(eventId + " : " + message.encode());
 
 		// 查询任务, 分发事件
-		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%';",
+		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%' order by create_time desc;",
 				ar -> this.dispatchEvents(event, message.getJsonObject("context"), ar));
 	}
 
 	private void dispatchEvents(JsonObject event, JsonObject message, AsyncResult<ResultSet> ar) {
 		if (ar.succeeded()) {
+			JsonObject eventcopy = event.copy();
 			ResultSet rs = ar.result();
 
-			List<JsonObject> tasks = rs.getRows();
+			List<JsonObject> tasks = new LinkedList<JsonObject>();
+			rs.getRows().forEach(tasks::add);;
+			
+			vertx.executeBlocking(future -> {
+				System.out.println(tasks.size() + " tasks registered.");
 
-			System.out.println(tasks.size() + " tasks registered.");
-
-			for (JsonObject task : tasks) {
-				if (accept(task, event, message)) {
-					System.out.println("task " + task.getString("TASK_NAME") + " accepted.");
-					JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
-
-					String taskUrl = runwith.getString("url");
-					JsonObject payload = runwith.getJsonObject("payload", new JsonObject());
-
-					HttpRequest<Buffer> request = client.postAbs(taskUrl);
-
-					payload.put("event", message);
-
-					System.out.println("task " + task.getString("TASK_NAME") + " run with " + taskUrl);
-					System.out.println("task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
-
-					request.sendJsonObject(payload, handler -> this.callback(task, event, message, handler));
-				} else {
-					System.out.println("task " + task.getString("TASK_NAME") + " unaccepted.");
+				int index = 0;
+				for (JsonObject task : tasks) {
+					System.out.println("task " + index++ + " .");
+					try {
+						if (accept(task, eventcopy, message)) {
+							System.out.println("task " + task.getString("TASK_NAME") + " accepted.");
+							JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
+	
+							String taskUrl = runwith.getString("url");
+							JsonObject payload = runwith.getJsonObject("payload", new JsonObject());
+	
+							HttpRequest<Buffer> request = client.postAbs(taskUrl);
+	
+							payload.put("event", message);
+	
+							System.out.println("task " + task.getString("TASK_NAME") + " run with " + taskUrl);
+							System.out.println("task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
+	
+							request.sendJsonObject(payload, handler -> this.callback(task, eventcopy, message, handler));
+						} else {
+							System.out.println("task " + task.getString("TASK_NAME") + " unaccepted.");
+						}
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
 				}
-			}
+				
+				future.complete("completed");
+			}, complete -> {});
 		} else {
 			ar.cause().printStackTrace();
 		}
 	}
 
 	private boolean accept(JsonObject task, JsonObject event, JsonObject message) {
-		JsonObject runat = new JsonObject(task.getString("TASK_RUNAT"));
+		String srunat = task.getString("TASK_RUNAT");
 
 		System.out.println("event output " + message.encode());
-		System.out.println("event runat " + runat.encode());
+		System.out.println("event runat " + srunat);
 
-		String taskEventId = runat.getString("eventId");
+		JsonObject runat = new JsonObject(srunat);
+
+		String taskEventId = runat.getString("eventId", "");
 		JsonArray filters = runat.getJsonArray("filters", new JsonArray());
-		String eventId = event.getString("EVENT_ID");
+		String eventId = event.getString("EVENT_ID", "");
 
 		if (Utils.isEmpty(taskEventId) || !taskEventId.equals(eventId)) {
 			return false;
 		}
 
 		for (int i = 0; i < filters.size(); i++) {
-			JsonObject filter = filters.getJsonObject(i);
+			Object test = filters.getValue(i);
 
-			String name = filter.getString("name", "");
-			String value = filter.getString("value", "");
+			if (test instanceof JsonObject) {
+				JsonObject filter = filters.getJsonObject(i);
 
-			if (Utils.isEmpty(name) || Utils.isEmpty(value)) {
-				continue;
-			}
+				String name = filter.getString("name", "");
+				Object valuetest = filter.getValue("value");
 
-			JsonObject output = message.getJsonObject("output", new JsonObject());
+				String value = String.valueOf(valuetest);
 
-			if (output.isEmpty()) {
-				return false;
-			}
+				if (Utils.isEmpty(name) || Utils.isEmpty(value)) {
+					continue;
+				}
 
-			if (!value.equals(output.getString(name))) {
-				return false;
+				JsonObject output = message.getJsonObject("output", new JsonObject());
+
+				if (output.isEmpty()) {
+					return false;
+				}
+
+				if (!value.equals(output.getString(name))) {
+					return false;
+				}
+			} else {
+				System.out.println("skipped filter " + test);
 			}
 		}
 
