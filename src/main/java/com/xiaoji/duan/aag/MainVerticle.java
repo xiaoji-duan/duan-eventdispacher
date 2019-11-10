@@ -20,6 +20,7 @@ import com.xiaoji.duan.aag.service.db.CreateTable;
 import com.xiaoji.duan.aag.utils.Utils;
 
 import io.vertx.amqpbridge.AmqpBridge;
+import io.vertx.amqpbridge.AmqpBridgeOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -77,9 +78,8 @@ public class MainVerticle extends AbstractVerticle {
 			if (config().getBoolean("log.error", Boolean.TRUE)) {
 				System.out.println("Vertx exception caught.");
 			}
-			exception.printStackTrace();
+			connectRemoteStompServer();
 
-			System.exit(-1);
 		});
 
 		client = WebClient.create(vertx);
@@ -115,11 +115,14 @@ public class MainVerticle extends AbstractVerticle {
 		});
 		connectStompServer();
 
-		remote = AmqpBridge.create(vertx);
-
-		remote.endHandler(handler -> {
-			connectRemoteStompServer();
-		});
+		AmqpBridgeOptions remoteOption = new AmqpBridgeOptions();
+		remoteOption.setReconnectAttempts(60);			// 重新连接尝试60次
+		remoteOption.setReconnectInterval(60 * 1000);	// 每次尝试间隔1分钟
+		
+		remote = AmqpBridge.create(vertx, remoteOption);
+//		remote.endHandler(handler -> {
+//			connectRemoteStompServer();
+//		});
 		connectRemoteStompServer();
 
 		Router router = Router.router(vertx);
