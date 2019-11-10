@@ -183,7 +183,7 @@ public class MainVerticle extends AbstractVerticle {
 		remote.start(config().getString("remote.server.host", "sa-amq"),
 				config().getInteger("remote.server.port", 5672), res -> {
 					if (res.failed()) {
-						res.cause().printStackTrace();
+//						res.cause().printStackTrace();
 						connectRemoteStompServer();
 					} else {
 						System.out.println("Stomp remote server connected.");
