@@ -75,9 +75,7 @@ public class MainVerticle extends AbstractVerticle {
 	@Override
 	public void start(Future<Void> startFuture) throws Exception {
 		vertx.exceptionHandler(exception -> {
-			if (config().getBoolean("log.error", Boolean.TRUE)) {
-				System.out.println("Vertx exception caught.");
-			}
+			error("Vertx exception caught.");
 			connectRemoteStompServer();
 
 		});
@@ -98,7 +96,7 @@ public class MainVerticle extends AbstractVerticle {
 			mySQLClient.update(ddl, update -> {
 
 				if (update.succeeded()) {
-					System.out.println("ddl");
+					info("ddl");
 				} else {
 					update.cause().printStackTrace(System.out);
 				}
@@ -156,7 +154,7 @@ public class MainVerticle extends AbstractVerticle {
 		vertx.createHttpServer().requestHandler(router::accept).listen(8080, http -> {
 			if (http.succeeded()) {
 				startFuture.complete();
-				System.out.println("HTTP server started on http://localhost:8080");
+				info("HTTP server started on http://localhost:8080");
 			} else {
 				startFuture.fail(http.cause());
 			}
@@ -170,7 +168,7 @@ public class MainVerticle extends AbstractVerticle {
 						res.cause().printStackTrace();
 						connectStompServer();
 					} else {
-						System.out.println("Stomp server connected.");
+						info("Stomp server connected.");
 
 						// 初始化事件订阅
 						mySQLClient.query("select * from aag_events;", ar -> this.subscribeevents(ar, bridge, false));
@@ -186,7 +184,7 @@ public class MainVerticle extends AbstractVerticle {
 //						res.cause().printStackTrace();
 						connectRemoteStompServer();
 					} else {
-						System.out.println("Stomp remote server connected.");
+						info("Stomp remote server connected.");
 
 						// 初始化事件订阅
 						mySQLClient.query("select * from aag_events;", ar -> this.subscribeevents(ar, remote, true));
@@ -201,18 +199,21 @@ public class MainVerticle extends AbstractVerticle {
 
 			List<JsonObject> registeredTasks = rs.getRows();
 
-			System.out.println(registeredTasks.size() + " tasks registered.");
+			debug(registeredTasks.size() + " tasks registered.");
 
 			for (JsonObject task : registeredTasks) {
 				String taskRunAt = task.getString("TASK_RUNAT");
-				System.out.println("TASK_RUNAT : " + taskRunAt);
+
+				debug("TASK_RUNAT : " + taskRunAt);
+
 				// 检查RunAt是否符合JSON格式
 				try {
 					JsonObject runAt = new JsonObject(taskRunAt);
 
 					// 如果要求设置客户端ip，则进行设置，否则不设置
 					if (runAt.containsKey("filters")) {
-						System.out.println("RUNAT has filters");
+						debug("RUNAT has filters");
+
 						JsonArray filters = runAt.getJsonArray("filters");
 						if (filters != null && filters.size() > 0) {
 
@@ -221,7 +222,7 @@ public class MainVerticle extends AbstractVerticle {
 
 							for (int i = 0; i < filters.size(); i++) {
 								JsonObject json = filters.getJsonObject(i);
-								System.out.println(json.encode());
+								debug(json.encode());
 
 								if ("secret".equals(json.getString("name"))) {
 									secret = json.getString("value", "");
@@ -234,7 +235,8 @@ public class MainVerticle extends AbstractVerticle {
 
 							if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
 								GitHubSecrets.put(observer, secret);
-								System.out.println(observer + " <=> " + secret);
+
+								debug(observer + " <=> " + secret);
 							}
 						}
 					}
@@ -250,7 +252,7 @@ public class MainVerticle extends AbstractVerticle {
 	}
 
 	private void registerevents(RoutingContext ctx) {
-		System.out.println(ctx.getBodyAsString());
+		debug(ctx.getBodyAsString());
 		JsonObject body = ctx.getBodyAsJson();
 
 		String saName = body.getString("saName");
@@ -317,10 +319,10 @@ public class MainVerticle extends AbstractVerticle {
 		// 检查RunAt是否符合JSON格式
 		try {
 			JsonObject runAt = new JsonObject(taskRunAt);
-			System.out.println("TASK_RUNAT" + runAt);
+			debug("TASK_RUNAT" + runAt);
 			// 如果要求设置客户端ip，则进行设置，否则不设置
 			if (runAt.containsKey("filters")) {
-				System.out.println("RUNAT has filters");
+				debug("RUNAT has filters");
 
 				JsonArray filters = runAt.getJsonArray("filters");
 				if (filters != null && filters.size() > 0) {
@@ -330,7 +332,7 @@ public class MainVerticle extends AbstractVerticle {
 
 					for (int i = 0; i < filters.size(); i++) {
 						JsonObject json = filters.getJsonObject(i);
-						System.out.println(json.encode());
+						debug(json.encode());
 						if ("secret".equals(json.getString("name"))) {
 							secret = json.getString("value", "");
 						}
@@ -342,7 +344,7 @@ public class MainVerticle extends AbstractVerticle {
 
 					if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
 						GitHubSecrets.put(observer, secret);
-						System.out.println(observer + " <=> " + secret);
+						debug(observer + " <=> " + secret);
 					}
 				}
 			}
@@ -393,7 +395,7 @@ public class MainVerticle extends AbstractVerticle {
 		updateparams.add(saPrefix);
 		updateparams.add(taskId);
 
-		System.out.println("refresh task with " + params.encode());
+		info("refresh task with " + params.encode());
 		mySQLClient.queryWithParams("select * from aag_tasks where sa_prefix = ? and task_id = ?;", params,
 				handler -> this.ifexist(
 						"insert into aag_tasks(unionid, sa_name, sa_prefix, task_id, task_type, task_name, task_runat, task_runwith, create_time) values(?, ?, ?, ?, ?, ?, ?, ?, now())",
@@ -426,7 +428,7 @@ public class MainVerticle extends AbstractVerticle {
 				if (!StringUtils.isEmpty(sign) && !StringUtils.isEmpty(sb)) {
 					String userSecret = GitHubSecrets.getOrDefault(observer,
 							config().getString("user.secret", "N2ZxMDdlMzhlY2Yw-7fa07e38ecf0831"));
-					System.out.println(observer + " <-> " + userSecret);
+					debug(observer + " <-> " + userSecret);
 
 					HmacUtils hm1 = new HmacUtils(HmacAlgorithms.HMAC_SHA_1, userSecret);
 					String signature = hm1.hmacHex(sb);
@@ -452,7 +454,7 @@ public class MainVerticle extends AbstractVerticle {
 								new JsonObject().put("trigger_time", triggerTime)
 										.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
 										.put("output", output));
-						System.out.println("Event [" + trigger + "] triggered.");
+						debug("Event [" + trigger + "] triggered.");
 
 						producer.send(new JsonObject().put("body", body));
 						producer.end();
@@ -462,7 +464,7 @@ public class MainVerticle extends AbstractVerticle {
 					// forbbiden!");
 				}
 
-				System.out.println(
+				debug(
 						"Github webhook launched with " + ((message == null) ? "empty" : message.encodePrettily()));
 			}
 
@@ -491,12 +493,12 @@ public class MainVerticle extends AbstractVerticle {
 
 				JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", triggerTime)
 						.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime)).put("output", output));
-				System.out.println("Event [" + trigger + "] triggered.");
+				debug("Event [" + trigger + "] triggered.");
 
 				producer.send(new JsonObject().put("body", body));
 				producer.end();
 
-				System.out.println(
+				debug(
 						"Fir.im webhook launched with " + message == null ? "empty" : message.encodePrettily());
 			}
 		} catch (Exception e) {
@@ -537,7 +539,7 @@ public class MainVerticle extends AbstractVerticle {
 		updateparams.add(saPrefix);
 		updateparams.add(actionId);
 
-		System.out.println("refresh action with " + params.encode());
+		info("refresh action with " + params.encode());
 		mySQLClient.queryWithParams("select * from aag_actions where sa_prefix = ? and action_id = ?", params,
 				handler -> this.ifexist(
 						"insert into aag_actions(unionid, sa_name, sa_prefix, action_id, action_type, action_name, action_runwith, create_time) values(?, ?, ?, ?, ?, ?, ?, now());",
@@ -559,12 +561,12 @@ public class MainVerticle extends AbstractVerticle {
 			ResultSet rs = ar.result();
 
 			if (rs.getNumRows() > 0) {
-				System.out.println("update task with " + updateparams.encode());
+				debug("update task with " + updateparams.encode());
 				// 存在记录 更新
 				mySQLClient.updateWithParams(update, updateparams, handler -> {
 				});
 			} else {
-				System.out.println("insert task with " + insertparams.encode());
+				debug("insert task with " + insertparams.encode());
 				// 不存在记录 插入
 				mySQLClient.updateWithParams(insert, insertparams, handler -> {
 				});
@@ -581,7 +583,7 @@ public class MainVerticle extends AbstractVerticle {
 
 			List<JsonObject> registeredEvents = rs.getRows();
 
-			System.out.println(registeredEvents.size() + " events registered.");
+			info(registeredEvents.size() + " events registered.");
 
 			for (JsonObject regEvent : registeredEvents) {
 				this.subscribe(regEvent, bridge, isRemote);
@@ -592,7 +594,7 @@ public class MainVerticle extends AbstractVerticle {
 	}
 
 	private void subscribe(JsonObject event, AmqpBridge bridge, Boolean isRemote) {
-		System.out.println(event.encode());
+		debug(event.encode());
 
 		String saPrefix = event.getString("SA_PREFIX");
 		String eventId = event.getString("EVENT_ID");
@@ -603,13 +605,13 @@ public class MainVerticle extends AbstractVerticle {
 		if (isRemote) {
 			if ("QUARTZ.1M".equals(eventType) || "QUARTZ.5M".equals(eventType) || "QUARTZ.1H".equals(eventType)) {
 				MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
-				System.out.println("Event [" + trigger + "] subscribed.");
+				debug("Event [" + trigger + "] subscribed.");
 				consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
 			}
 		} else {
 			if (!"QUARTZ.1M".equals(eventType) && !"QUARTZ.5M".equals(eventType) && !"QUARTZ.1H".equals(eventType)) {
 				MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
-				System.out.println("Event [" + trigger + "] subscribed.");
+				debug("Event [" + trigger + "] subscribed.");
 				consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
 			}
 		}
@@ -632,13 +634,13 @@ public class MainVerticle extends AbstractVerticle {
 
 					JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", triggerTime)
 							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime)).put("output", output));
-					System.out.println("Event [" + trigger + "] triggered.");
+					debug("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
 					producer.end();
 				});
 
-				System.out.println("Event [" + trigger + "] scheduled.");
+				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
 				e.printStackTrace();
 			}
@@ -662,13 +664,13 @@ public class MainVerticle extends AbstractVerticle {
 
 					JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", triggerTime)
 							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime)).put("output", output));
-					System.out.println("Event [" + trigger + "] triggered.");
+					debug("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
 					producer.end();
 				});
 
-				System.out.println("Event [" + trigger + "] scheduled.");
+				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
 				e.printStackTrace();
 			}
@@ -692,13 +694,13 @@ public class MainVerticle extends AbstractVerticle {
 
 					JsonObject body = new JsonObject().put("context", new JsonObject().put("trigger_time", triggerTime)
 							.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime)).put("output", output));
-					System.out.println("Event [" + trigger + "] triggered.");
+					debug("Event [" + trigger + "] triggered.");
 
 					producer.send(new JsonObject().put("body", body));
 					producer.end();
 				});
 
-				System.out.println("Event [" + trigger + "] scheduled.");
+				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
 				e.printStackTrace();
 			}
@@ -709,15 +711,15 @@ public class MainVerticle extends AbstractVerticle {
 		String eventId = event.getString("EVENT_ID");
 
 		if (!(received.body().getValue("body") instanceof JsonObject)) {
-			System.out.println("Message content is not JsonObject, process stopped.");
+			error("Message content is not JsonObject, process stopped.");
 			return;
 		}
 
 		JsonObject message = received.body().getJsonObject("body");
-		System.out.println(eventId + " : " + message.encode());
+		debug(eventId + " : " + message.encode());
 
 		// 查询任务, 分发事件
-		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%' order by create_time desc;",
+		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%' and task_runat not like '%active%false%' order by create_time desc;",
 				ar -> this.dispatchEvents(event, message.getJsonObject("context"), ar));
 	}
 
@@ -729,15 +731,19 @@ public class MainVerticle extends AbstractVerticle {
 			List<JsonObject> tasks = new LinkedList<JsonObject>();
 			rs.getRows().forEach(tasks::add);;
 			
+			// 用户日志跟踪
+			String execId = UUID.randomUUID().toString();
+			
 			vertx.executeBlocking(future -> {
-				System.out.println(tasks.size() + " tasks registered.");
+				Integer total = tasks.size();
+				debug("[" + execId + "] " + total + " tasks registered.");
 
 				int index = 0;
 				for (JsonObject task : tasks) {
-					System.out.println("task " + index++ + " .");
+					debug("[" + execId + "] " + "task " + ++index + "/" + total + " .");
 					try {
 						if (accept(task, eventcopy, message)) {
-							System.out.println("task " + task.getString("TASK_NAME") + " accepted.");
+							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " accepted.");
 							JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
 	
 							String taskUrl = runwith.getString("url");
@@ -747,12 +753,12 @@ public class MainVerticle extends AbstractVerticle {
 	
 							payload.put("event", message);
 	
-							System.out.println("task " + task.getString("TASK_NAME") + " run with " + taskUrl);
-							System.out.println("task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
+							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run with " + taskUrl);
+							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
 	
 							request.sendJsonObject(payload, handler -> this.callback(task, eventcopy, message, handler));
 						} else {
-							System.out.println("task " + task.getString("TASK_NAME") + " unaccepted.");
+							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " unaccepted.");
 						}
 					} catch (Exception e) {
 						e.printStackTrace();
@@ -760,7 +766,9 @@ public class MainVerticle extends AbstractVerticle {
 				}
 				
 				future.complete("completed");
-			}, complete -> {});
+			}, complete -> {
+				debug("[" + execId + "] completed.");
+			});
 		} else {
 			ar.cause().printStackTrace();
 		}
@@ -769,8 +777,8 @@ public class MainVerticle extends AbstractVerticle {
 	private boolean accept(JsonObject task, JsonObject event, JsonObject message) {
 		String srunat = task.getString("TASK_RUNAT");
 
-		System.out.println("event output " + message.encode());
-		System.out.println("event runat " + srunat);
+		debug("event output " + message.encode());
+		debug("event runat " + srunat);
 
 		JsonObject runat = new JsonObject(srunat);
 
@@ -807,7 +815,7 @@ public class MainVerticle extends AbstractVerticle {
 					return false;
 				}
 			} else {
-				System.out.println("skipped filter " + test);
+				debug("skipped filter " + test);
 			}
 		}
 
@@ -871,6 +879,24 @@ public class MainVerticle extends AbstractVerticle {
 
 				request.sendJsonObject(body, handler -> this.callback(null, event, message, handler));
 			}
+		}
+	}
+
+	private void info(String log) {
+		if (config().getBoolean("log.info", Boolean.FALSE)) {
+			System.out.println(log);
+		}
+	}
+
+	private void debug(String log) {
+		if (config().getBoolean("log.debug", Boolean.FALSE)) {
+			System.out.println(log);
+		}
+	}
+
+	private void error(String log) {
+		if (config().getBoolean("log.error", Boolean.TRUE)) {
+			System.out.println(log);
 		}
 	}
 }
