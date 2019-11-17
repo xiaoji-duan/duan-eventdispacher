@@ -1,5 +1,6 @@
 package com.xiaoji.duan.aag;
 
+import java.math.BigInteger;
 import java.text.ParseException;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -733,17 +734,23 @@ public class MainVerticle extends AbstractVerticle {
 			
 			// 用户日志跟踪
 			String execId = UUID.randomUUID().toString();
-			
-			vertx.executeBlocking(future -> {
-				Integer total = tasks.size();
-				debug("[" + execId + "] " + total + " tasks registered.");
+			String eventId = event.getString("EVENT_ID");
 
-				int index = 0;
+			vertx.executeBlocking(future -> {
+				Integer index = 0;
+				Integer total = 0;
+
+				total = tasks.size();
+				
+				error("[" + eventId + "]" + "[" + execId + "] " + total + " tasks registered.");
+
 				for (JsonObject task : tasks) {
-					debug("[" + execId + "] " + "task " + ++index + "/" + total + " .");
+					index++;
+					
+					debug("[" + eventId + "]" + "[" + execId + "] " + "task " + index + "/" + total + " .");
 					try {
 						if (accept(task, eventcopy, message)) {
-							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " accepted.");
+							error("[" + eventId + "]" + "[" + execId + "] " + index + "/" + total + " task " + task.getString("TASK_NAME") + " accepted.");
 							JsonObject runwith = new JsonObject(task.getString("TASK_RUNWITH"));
 	
 							String taskUrl = runwith.getString("url");
@@ -753,21 +760,31 @@ public class MainVerticle extends AbstractVerticle {
 	
 							payload.put("event", message);
 	
-							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run with " + taskUrl);
-							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
+							debug("[" + eventId + "]" + "[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run with " + taskUrl);
+							debug("[" + eventId + "]" + "[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
 	
 							request.sendJsonObject(payload, handler -> this.callback(task, eventcopy, message, handler));
 						} else {
-							debug("[" + execId + "] " + "task " + task.getString("TASK_NAME") + " unaccepted.");
+							debug("[" + eventId + "]" + "[" + execId + "] " + index + "/" + total + " task " + task.getString("TASK_NAME") + " unaccepted.");
 						}
 					} catch (Exception e) {
 						e.printStackTrace();
 					}
 				}
 				
-				future.complete("completed");
+				future.complete(new JsonObject().put("index", index).put("total", total));
 			}, complete -> {
-				debug("[" + execId + "] completed.");
+				if (complete.succeeded()) {
+					JsonObject result = (JsonObject) complete.result();
+
+					Integer index = result.getInteger("index", 0);
+					Integer total = result.getInteger("total", 0);
+					
+					error("[" + eventId + "]" + "[" + execId + "] " + index + "/" + total + " completed.");
+				} else {
+					error("[" + eventId + "]" + "[" + execId + "] completed with error.");
+				}
+				
 			});
 		} else {
 			ar.cause().printStackTrace();
