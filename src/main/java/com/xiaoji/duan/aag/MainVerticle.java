@@ -1,6 +1,5 @@
 package com.xiaoji.duan.aag;
 
-import java.math.BigInteger;
 import java.text.ParseException;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -242,12 +241,14 @@ public class MainVerticle extends AbstractVerticle {
 						}
 					}
 				} catch (Exception e) {
+					error("loadsecrets - " + e.getMessage());
 					if (StringUtils.isEmpty(taskRunAt)) {
 						taskRunAt = new JsonObject().encode();
 					}
 				}
 			}
 		} else {
+			error("loadsecrets - " + ar.cause().getMessage());
 			ar.cause().printStackTrace();
 		}
 	}
@@ -350,6 +351,7 @@ public class MainVerticle extends AbstractVerticle {
 				}
 			}
 		} catch (Exception e) {
+			error("registertasks - " + e.getMessage());
 			if (StringUtils.isEmpty(taskRunAt)) {
 				taskRunAt = new JsonObject().encode();
 			}
@@ -368,6 +370,7 @@ public class MainVerticle extends AbstractVerticle {
 				}
 			}
 		} catch (Exception e) {
+			error("registertasks - " + e.getMessage());
 			if (StringUtils.isEmpty(taskRunWith)) {
 				taskRunWith = new JsonObject().encode();
 			}
@@ -503,6 +506,7 @@ public class MainVerticle extends AbstractVerticle {
 						"Fir.im webhook launched with " + message == null ? "empty" : message.encodePrettily());
 			}
 		} catch (Exception e) {
+			error("webhook - " + e.getMessage());
 			e.printStackTrace();
 		} finally {
 			ctx.response().end("ok");
@@ -574,6 +578,7 @@ public class MainVerticle extends AbstractVerticle {
 			}
 
 		} else {
+			error("ifexist - " + ar.cause().getMessage());
 			ar.cause().printStackTrace();
 		}
 	}
@@ -590,6 +595,7 @@ public class MainVerticle extends AbstractVerticle {
 				this.subscribe(regEvent, bridge, isRemote);
 			}
 		} else {
+			error("subscribeevents - " + ar.cause().getMessage());
 			ar.cause().printStackTrace();
 		}
 	}
@@ -607,6 +613,10 @@ public class MainVerticle extends AbstractVerticle {
 			if ("QUARTZ.1M".equals(eventType) || "QUARTZ.5M".equals(eventType) || "QUARTZ.1H".equals(eventType)) {
 				MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
 				debug("Event [" + trigger + "] subscribed.");
+				consumer.exceptionHandler(exception -> {
+					error("MessageConsumer exception caught.");
+					connectRemoteStompServer();
+				});
 				consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
 			}
 		} else {
@@ -643,6 +653,7 @@ public class MainVerticle extends AbstractVerticle {
 
 				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
+				error("subscribe - " + e.getMessage());
 				e.printStackTrace();
 			}
 		}
@@ -673,6 +684,7 @@ public class MainVerticle extends AbstractVerticle {
 
 				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
+				error("subscribe - " + e.getMessage());
 				e.printStackTrace();
 			}
 		}
@@ -703,6 +715,7 @@ public class MainVerticle extends AbstractVerticle {
 
 				debug("Event [" + trigger + "] scheduled.");
 			} catch (ParseException e) {
+				error("subscribe - " + e.getMessage());
 				e.printStackTrace();
 			}
 		}
@@ -768,6 +781,7 @@ public class MainVerticle extends AbstractVerticle {
 							debug("[" + eventId + "]" + "[" + execId + "] " + index + "/" + total + " task " + task.getString("TASK_NAME") + " unaccepted.");
 						}
 					} catch (Exception e) {
+						error("dispatchEvents - " + e.getMessage());
 						e.printStackTrace();
 					}
 				}
@@ -787,6 +801,7 @@ public class MainVerticle extends AbstractVerticle {
 				
 			});
 		} else {
+			error("dispatchEvents - " + ar.cause().getMessage());
 			ar.cause().printStackTrace();
 		}
 	}
@@ -885,6 +900,7 @@ public class MainVerticle extends AbstractVerticle {
 				}
 			}
 		} else {
+			error("callback - " + ar.cause().getMessage());
 			ar.cause().printStackTrace();
 
 			// 调用异常处理
