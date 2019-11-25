@@ -614,7 +614,7 @@ public class MainVerticle extends AbstractVerticle {
 				MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
 				debug("Event [" + trigger + "] subscribed.");
 				consumer.exceptionHandler(exception -> {
-					error("MessageConsumer exception caught.");
+					error("MessageConsumer exception caught remote.");
 					connectRemoteStompServer();
 				});
 				consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
@@ -623,6 +623,10 @@ public class MainVerticle extends AbstractVerticle {
 			if (!"QUARTZ.1M".equals(eventType) && !"QUARTZ.5M".equals(eventType) && !"QUARTZ.1H".equals(eventType)) {
 				MessageConsumer<JsonObject> consumer = bridge.createConsumer(trigger);
 				debug("Event [" + trigger + "] subscribed.");
+				consumer.exceptionHandler(exception -> {
+					error("MessageConsumer exception caught local.");
+					connectRemoteStompServer();
+				});
 				consumer.handler(vertxMsg -> this.eventTriggered(event, vertxMsg));
 			}
 		}
@@ -889,6 +893,7 @@ public class MainVerticle extends AbstractVerticle {
 					request.sendJsonObject(body, handler -> this.callback(null, event, message, handler));
 				}
 			} else {
+				error("Response error " + statusCode);
 				// 调用异常处理
 				if (!Utils.isEmpty(taskErrorUrl)) {
 					HttpRequest<Buffer> request = client.getAbs(taskErrorUrl);
