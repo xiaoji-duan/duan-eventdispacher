@@ -826,7 +826,10 @@ public class MainVerticle extends AbstractVerticle {
 			return false;
 		}
 
+		StringBuffer trace = new StringBuffer();
+
 		for (int i = 0; i < filters.size(); i++) {
+
 			Object test = filters.getValue(i);
 
 			if (test instanceof JsonObject) {
@@ -836,7 +839,10 @@ public class MainVerticle extends AbstractVerticle {
 				Object valuetest = filter.getValue("value");
 
 				String value = String.valueOf(valuetest);
-
+				trace.append("[");
+				trace.append(name);
+				trace.append("=(");
+				trace.append(value);
 				if (Utils.isEmpty(name) || Utils.isEmpty(value)) {
 					continue;
 				}
@@ -847,14 +853,22 @@ public class MainVerticle extends AbstractVerticle {
 					return false;
 				}
 
+				trace.append("==?");
+				trace.append(output.getString(name));
+				trace.append(")],");
 				if (!value.equals(output.getString(name))) {
 					return false;
 				}
 			} else {
+				trace.append("[skip=(");
+				trace.append(test);
+				trace.append(")],");
 				debug("skipped filter " + test);
 			}
 		}
 
+		error(trace.toString());
+		
 		return true;
 	}
 
