@@ -145,6 +145,7 @@ public class MainVerticle extends AbstractVerticle {
 		router.route("/aag/register/*").handler(BodyHandler.create());
 		router.route("/aag/register/events").produces("application/json").handler(this::registerevents);
 		router.route("/aag/register/tasks").produces("application/json").handler(this::registertasks);
+		router.route("/aag/register/multitasks").produces("application/json").handler(this::registermultitasks);
 		router.route("/aag/register/actions").produces("application/json").handler(this::registeractions);
 
 		router.route("/aag/webhooks/*").handler(BodyHandler.create());
@@ -407,6 +408,135 @@ public class MainVerticle extends AbstractVerticle {
 						"update aag_tasks set sa_name = ?, task_type = ?, task_name = ?, task_runat = ?, task_runwith = ? where sa_prefix = ? and task_id = ?",
 						updateparams, handler));
 
+		JsonObject resp = new JsonObject();
+		resp.put("code", "0");
+		resp.put("message", "");
+		resp.put("data", new JsonObject());
+
+		ctx.response().putHeader("Content-Type", "application/json;charset=UTF-8").end(resp.encode());
+	}
+
+	private void registermultitasks(RoutingContext ctx) {
+		JsonObject body = ctx.getBodyAsJson();
+
+		String forword = ctx.request().getHeader("x-forwarded-for");
+		StringBuffer ipAddress = new StringBuffer(forword == null? "" : forword);
+
+		if (StringUtils.isEmpty(ipAddress.toString())) {
+			ipAddress.append("222.64.177.189"); // 上海IP
+		} else if (ipAddress.toString().contains(",")) {
+			String[] addresses = ipAddress.toString().split(",");
+
+			ipAddress.delete(0, ipAddress.length()).append(addresses[0].trim());
+		}
+
+		JsonArray multitask = body.getJsonArray("tasks", new JsonArray());
+		
+		info("received " + multitask.size() + " multi tasks to register.");
+		
+		multitask.forEach(value -> {
+			if (value != null) {
+				JsonObject task = (JsonObject) value;
+				
+				String saName = task.getString("saName");
+				String saPrefix = task.getString("saPrefix");
+				String taskId = task.getString("taskId");
+				String taskType = task.getString("taskType");
+				String taskName = task.getString("taskName");
+				String taskRunAt = task.getString("taskRunAt");
+				String taskRunWith = task.getString("taskRunWith");
+		
+				// 检查RunAt是否符合JSON格式
+				try {
+					JsonObject runAt = new JsonObject(taskRunAt);
+					debug("TASK_RUNAT" + runAt);
+					// 如果要求设置客户端ip，则进行设置，否则不设置
+					if (runAt.containsKey("filters")) {
+						debug("RUNAT has filters");
+	
+						JsonArray filters = runAt.getJsonArray("filters");
+						if (filters != null && filters.size() > 0) {
+	
+							String secret = "";
+							String observer = "";
+	
+							for (int i = 0; i < filters.size(); i++) {
+								JsonObject json = filters.getJsonObject(i);
+								debug(json.encode());
+								if ("secret".equals(json.getString("name"))) {
+									secret = json.getString("value", "");
+								}
+	
+								if ("observer".equals(json.getString("name"))) {
+									observer = json.getString("value", "");
+								}
+							}
+	
+							if (!StringUtils.isEmpty(secret) && !StringUtils.isEmpty(observer)) {
+								GitHubSecrets.put(observer, secret);
+								debug(observer + " <=> " + secret);
+							}
+						}
+					}
+				} catch (Exception e) {
+					error("registertasks - " + e.getMessage());
+					if (StringUtils.isEmpty(taskRunAt)) {
+						taskRunAt = new JsonObject().encode();
+					}
+				}
+	
+				// 检查RunWith是否符合JSON格式
+				try {
+					JsonObject runWith = new JsonObject(taskRunWith);
+	
+					// 如果要求设置客户端ip，则进行设置，否则不设置
+					if (runWith.containsKey("payload")) {
+						if (runWith.getJsonObject("payload") != null
+								&& !runWith.getJsonObject("payload").containsKey("clientip")) {
+							runWith.getJsonObject("payload").put("clientip", ipAddress.toString());
+							taskRunWith = runWith.encode();
+						}
+					}
+				} catch (Exception e) {
+					error("registertasks - " + e.getMessage());
+					if (StringUtils.isEmpty(taskRunWith)) {
+						taskRunWith = new JsonObject().encode();
+					}
+				}
+	
+				JsonArray params = new JsonArray();
+				params.add(saPrefix);
+				params.add(taskId);
+	
+				JsonArray insertparams = new JsonArray();
+				insertparams.add(UUID.randomUUID().toString());
+				insertparams.add(saName);
+				insertparams.add(saPrefix);
+				insertparams.add(taskId);
+				insertparams.add(taskType);
+				insertparams.add(taskName);
+				insertparams.add(taskRunAt);
+				insertparams.add(taskRunWith);
+	
+				JsonArray updateparams = new JsonArray();
+				updateparams.add(saName);
+				updateparams.add(taskType);
+				updateparams.add(taskName);
+				updateparams.add(taskRunAt);
+				updateparams.add(taskRunWith);
+				updateparams.add(saPrefix);
+				updateparams.add(taskId);
+	
+				info("refresh multi tasks with " + params.encode());
+				mySQLClient.queryWithParams("select * from aag_tasks where sa_prefix = ? and task_id = ?;", params,
+						handler -> this.ifexist(
+								"insert into aag_tasks(unionid, sa_name, sa_prefix, task_id, task_type, task_name, task_runat, task_runwith, create_time) values(?, ?, ?, ?, ?, ?, ?, ?, now())",
+								insertparams,
+								"update aag_tasks set sa_name = ?, task_type = ?, task_name = ?, task_runat = ?, task_runwith = ? where sa_prefix = ? and task_id = ?",
+								updateparams, handler));
+			}
+		});
+		
 		JsonObject resp = new JsonObject();
 		resp.put("code", "0");
 		resp.put("message", "");
