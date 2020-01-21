@@ -594,8 +594,83 @@ public class MainVerticle extends AbstractVerticle {
 						producer.end();
 					}
 				} else {
-					// ctx.response().setStatusCode(403).end("Illegal access,
-					// forbbiden!");
+					// GitHub App Requests
+					String trigger = "aag" + "_" + "GITHUB_APP".toLowerCase();
+
+					// 增加Github hookshot请求头参数
+					JsonObject github = new JsonObject();
+					String event = "";
+
+					for (Entry<String, String> entry : ctx.request().headers().entries()) {
+						String key = entry.getKey();
+						String value = entry.getValue();
+						
+						github.put(key, value);
+						if ("X-GitHub-Event".equals(key)) {
+							event = value;
+						}
+					}
+					
+					MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+					message = ctx.getBodyAsJson();
+					JsonObject hookshot = new JsonObject();
+
+					if (event != null && !"".equals(event) && message != null && !message.isEmpty()) {
+						// push event
+						if ("push".equals(event) 
+								&& message.containsKey("installation")) {
+							hookshot.mergeIn(message.getJsonObject("installation"), true);
+							hookshot.put("ref", message.getString("ref", ""));
+						}
+
+						// ping event
+						if ("ping".equals(event) 
+								&& message.containsKey("app_id") 
+								&& message.containsKey("hook")) {
+							hookshot.mergeIn(message.getJsonObject("hook"), true);
+							hookshot.put("app_id", message.getValue("app_id"));
+						}
+						
+						// integration_installation event
+						if ("integration_installation".equals(event) 
+								&& message.containsKey("action")
+								&& message.containsKey("installation")
+								&& message.containsKey("repositories")) {
+							hookshot.mergeIn(message.getJsonObject("installation"), true);
+							hookshot.put("action", message.getValue("action"));
+							hookshot.put("repositories", message.getValue("repositories"));
+						}
+						
+						// installation event
+						if ("installation".equals(event) 
+								&& message.containsKey("action")
+								&& message.containsKey("installation")
+								&& message.containsKey("repositories")) {
+							hookshot.mergeIn(message.getJsonObject("installation"), true);
+							hookshot.put("action", message.getValue("action"));
+							hookshot.put("repositories", message.getValue("repositories"));
+						}
+					}
+					
+					long triggerTime = System.currentTimeMillis();
+
+					JsonObject output = new JsonObject()
+							.mergeIn(hookshot, true)
+							.put("webhook", "github_app")
+							.put("observer", observer)
+							.put("event", event)
+							.put("github", github)
+							.put("payload", message);
+
+					JsonObject body = new JsonObject().put("context",
+							new JsonObject().put("trigger_time", triggerTime)
+									.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+									.put("output", output));
+					debug("Event [" + trigger + "] triggered.");
+
+					producer.send(new JsonObject().put("body", body));
+					producer.end();
 				}
 
 				debug(
