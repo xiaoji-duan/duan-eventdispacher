@@ -677,6 +677,34 @@ public class MainVerticle extends AbstractVerticle {
 						"Github webhook launched with " + ((message == null) ? "empty" : message.encodePrettily()));
 			}
 
+			if ("xunfei.aiui".equals(owner) && "v2.1".equals(version)) {
+				String trigger = "aag" + "_" + "WEBHOOK_XUNFEI.AIUI".toLowerCase();
+
+				JsonObject message = ctx.getBodyAsJson();
+
+				MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+				long triggerTime = System.currentTimeMillis();
+
+				JsonObject output = new JsonObject()
+						.put("webhook", "xunfei.aiui")
+						.put("observer", observer)
+						.put("payload", message);
+
+				JsonObject body = new JsonObject()
+						.put("context", new JsonObject()
+								.put("trigger_time", triggerTime)
+								.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+								.put("output", output));
+				debug("Event [" + trigger + "] triggered.");
+
+				producer.send(new JsonObject().put("body", body));
+				producer.end();
+
+				debug(
+						"Xunfei.aiui webhook launched with " + message == null ? "empty" : message.encodePrettily());
+			}
+			
 			if ("fir.im".equals(owner) && "v3".equals(version)) {
 				String trigger = "aag" + "_" + "WEBHOOK_FIR.IM".toLowerCase();
 
