@@ -705,6 +705,36 @@ public class MainVerticle extends AbstractVerticle {
 						"Xunfei.aiui webhook launched with " + message == null ? "empty" : message.encodePrettily());
 			}
 			
+			if ("event.internal".equals(owner) && "v1".equals(version)) {
+				String trigger = "aag" + "_" + "WEBHOOK_EVENT.INTERNAL".toLowerCase();
+
+				JsonObject message = ctx.getBodyAsJson();
+				JsonObject event = message.getJsonObject("event", new JsonObject());
+
+				MessageProducer<JsonObject> producer = bridge.createProducer(trigger);
+
+				long triggerTime = System.currentTimeMillis();
+
+				JsonObject output = new JsonObject()
+						.mergeIn(event)
+						.put("webhook", "event.internal")
+						.put("observer", observer)
+						.put("payload", message);
+
+				JsonObject body = new JsonObject()
+						.put("context", new JsonObject()
+								.put("trigger_time", triggerTime)
+								.put("trigger_time_fmt", Utils.getFormattedTime(triggerTime))
+								.put("output", output));
+				debug("Event [" + trigger + "] triggered.");
+
+				producer.send(new JsonObject().put("body", body));
+				producer.end();
+
+				debug(
+						"Event.internal webhook launched with " + message == null ? "empty" : message.encodePrettily());
+			}
+
 			if ("fir.im".equals(owner) && "v3".equals(version)) {
 				String trigger = "aag" + "_" + "WEBHOOK_FIR.IM".toLowerCase();
 
@@ -968,6 +998,10 @@ public class MainVerticle extends AbstractVerticle {
 
 		JsonObject message = received.body().getJsonObject("body");
 		debug(eventId + " : " + message.encode());
+		
+		if ("WEBHOOK_XUNFEI.AIUI".equals(eventId)) {
+			error(eventId + " : " + message.encode());
+		}
 
 		// 查询任务, 分发事件
 		mySQLClient.query("select * from aag_tasks where task_runat like '%" + eventId + "%' and task_runat not like '%active%false%' order by create_time desc;",
@@ -1012,7 +1046,11 @@ public class MainVerticle extends AbstractVerticle {
 	
 							debug("[" + eventId + "]" + "[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run with " + taskUrl);
 							debug("[" + eventId + "]" + "[" + execId + "] " + "task " + task.getString("TASK_NAME") + " run payload " + payload.encode());
-	
+
+							if ("WEBHOOK_XUNFEI.AIUI".equals(eventId)) {
+								error(eventId + " : " + payload.encodePrettily());
+							}
+
 							request.sendJsonObject(payload, handler -> this.callback(task, eventcopy, message, handler));
 						} else {
 							debug("[" + eventId + "]" + "[" + execId + "] " + index + "/" + total + " task " + task.getString("TASK_NAME") + " unaccepted.");
