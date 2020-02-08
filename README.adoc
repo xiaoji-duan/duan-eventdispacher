@@ -37,6 +37,8 @@ RunWith {
 };
 ```
 
+支持多级事件逐级分发
+
 == Help
 
 * https://vertx.io/docs/[Vert.x Documentation]
