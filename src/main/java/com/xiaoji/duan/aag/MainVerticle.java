@@ -76,8 +76,7 @@ public class MainVerticle extends AbstractVerticle {
 	public void start(Future<Void> startFuture) throws Exception {
 		vertx.exceptionHandler(exception -> {
 			error("Vertx exception caught.");
-			connectRemoteStompServer();
-
+			System.exit(-1);
 		});
 
 		client = WebClient.create(vertx);
@@ -1099,8 +1098,10 @@ public class MainVerticle extends AbstractVerticle {
 
 		StringBuffer trace = new StringBuffer();
 
+		// 循环过滤条件
 		for (int i = 0; i < filters.size(); i++) {
 
+			// 取得单个过滤条件
 			Object test = filters.getValue(i);
 
 			if (test instanceof JsonObject) {
@@ -1114,10 +1115,13 @@ public class MainVerticle extends AbstractVerticle {
 				trace.append(name);
 				trace.append("=(");
 				trace.append(value);
+				
+				// 如果过滤条件名称或者检测值不存在, 则跳过此过滤条件
 				if (Utils.isEmpty(name) || Utils.isEmpty(value)) {
 					continue;
 				}
 
+				// 获得检测对象
 				JsonObject output = message.getJsonObject("output", new JsonObject());
 
 				if (output.isEmpty()) {
@@ -1127,8 +1131,45 @@ public class MainVerticle extends AbstractVerticle {
 				trace.append("==?");
 				trace.append(output.getString(name));
 				trace.append(")],");
-				if (!value.equals(output.getString(name))) {
-					return false;
+				
+				String type = filter.getString("type", "value_string");
+				
+				if ("value_string".equals(type)) {
+					if (!value.equals(output.getString(name))) {
+						return false;
+					}
+				} else if ("array_string".equals(type)) {
+					Object obj = output.getValue(name);
+					
+					if (obj instanceof JsonArray) {
+						JsonArray array = (JsonArray) obj;
+						if (!array.contains(value)) {
+							return false;
+						}
+					} else {
+						return false;
+					}
+				} else if ("array_regex".equals(type)) {
+					Object obj = output.getValue(name);
+					
+					if (obj instanceof JsonArray) {
+						JsonArray array = (JsonArray) obj;
+						Iterator ait = array.iterator();
+						
+						boolean matched = false;
+						
+						while(ait.hasNext()) {
+							Object next = ait.next();
+
+							if (String.valueOf(next).matches(value)) matched = true;
+						}
+						
+						if (!matched) {
+							return false;
+						}
+					} else {
+						return false;
+					}
 				}
 			} else {
 				trace.append("[skip=(");
@@ -1221,5 +1262,9 @@ public class MainVerticle extends AbstractVerticle {
 		if (config().getBoolean("log.error", Boolean.TRUE)) {
 			System.out.println(log);
 		}
+	}
+	
+	public static void main(String[] args) {
+		System.out.println("dev/.nautilus.yml".matches(".*\\/.+.xml"));
 	}
 }
