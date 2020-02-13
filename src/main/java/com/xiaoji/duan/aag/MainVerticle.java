@@ -1138,6 +1138,17 @@ public class MainVerticle extends AbstractVerticle {
 					if (!value.equals(output.getString(name))) {
 						return false;
 					}
+				} else if ("string_array".equals(type)) {
+					String obj = output.getString(name);
+					
+					if (valuetest instanceof JsonArray) {
+						JsonArray array = (JsonArray) valuetest;
+						if (!array.contains(obj)) {
+							return false;
+						}
+					} else {
+						return false;
+					}
 				} else if ("array_string".equals(type)) {
 					Object obj = output.getValue(name);
 					
