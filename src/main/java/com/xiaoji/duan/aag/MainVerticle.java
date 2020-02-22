@@ -76,7 +76,7 @@ public class MainVerticle extends AbstractVerticle {
 	public void start(Future<Void> startFuture) throws Exception {
 		vertx.exceptionHandler(exception -> {
 			error("Vertx exception caught.");
-			System.exit(-1);
+			vertx.close();
 		});
 
 		client = WebClient.create(vertx);
